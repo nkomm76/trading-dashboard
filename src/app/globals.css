@@ -39,8 +39,9 @@
   --color-light-orange: var(--orange);
   --color-light-red: var(--red);
   --color-light-grey: var(--grey);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Systemschriften: kein Font-Download beim Build nötig */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 body {
