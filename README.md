@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dividenden-Dashboard
 
-## Getting Started
+Privates, passwortgeschütztes Dashboard für das eigene Dividendendepot (Next.js, MySQL, Prisma).
 
-First, run the development server:
+- Käufe manuell erfassen (Suche per Name, ISIN oder Ticker)
+- Täglich: Kurs, Dividendenrendite, Yield on Cost, Payout (EPS und FCF), Dividenden-CAGR 3/5/10 Jahre, Debt to Equity, Neuverschuldung, Ausschüttungsrhythmus, FCF, EPS
+- Ampel aus festen Regeln (Schwellen unter „Einstellungen“) plus optionaler KI-Auswertung des Jahresausblicks (Claude API mit Websuche)
+- **Keine Quelle → keine Anzeige:** Fehlende Werte bleiben leer; jede Zahl zeigt per Tooltip Quelle und Stichtag
+
+Datenquellen (kostenlos): Yahoo Finance (`yahoo-finance2`), SEC EDGAR (US-Ergänzung), EZB-Referenzkurse.
+
+## Lokal starten
 
 ```bash
+brew services start mysql
+npm install
+npm run db:migrate
+npm run set-password
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Dann http://localhost:3000 öffnen. Die Umgebungsvariablen stehen in `.env` (Vorlage: `.env.example`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Tests: `npm test`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment auf Hostinger (Cloud Agency)
 
-## Learn More
+1. **Datenbank:** im hPanel unter *Datenbanken → MySQL* eine Datenbank samt Benutzer anlegen.
+2. **Node.js-App:** im hPanel *Websites → Node.js-App hinzufügen* → Framework „Next.js“, Node 22, Quelle: Git-Repository oder ZIP-Upload. Build-Befehl `npm run build`, Start-Befehl `npm start`.
+3. **Umgebungsvariablen** in der App setzen (Werte nicht aus der lokalen `.env` kopieren, sondern neu erzeugen):
+   - `DATABASE_URL` = `mysql://USER:PASSWORT@localhost:3306/DATENBANK`
+   - `SESSION_PASSWORD` = Ausgabe von `openssl rand -hex 32`
+   - `CRON_SECRET` = Ausgabe von `openssl rand -hex 24`
+   - `ADMIN_PASSWORD_HASH_B64` = Ausgabe von `npm run set-password`
+   - `SEC_USER_AGENT` = z. B. `dividenden-dashboard privat`
+   - optional `ANTHROPIC_API_KEY` für den KI-Ausblick
+4. **Tabellen anlegen:** einmalig `npm run db:deploy` (per SSH im App-Verzeichnis oder als Teil des Build-Befehls: `npm run db:deploy && npm run build`).
+5. **HTTPS:** SSL-Zertifikat für die (Sub-)Domain im hPanel aktivieren. Das Session-Cookie wird in Produktion nur über HTTPS gesendet.
+6. **Cronjob** (hPanel → *Erweitert → Cronjobs*), täglich um 23:00 Uhr:
+   ```
+   curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" https://DEINE-DOMAIN/api/cron/refresh
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+## Aufbau
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Pfad | Inhalt |
+|---|---|
+| `src/lib/data/` | Adapter für Yahoo, SEC, EZB |
+| `src/lib/metrics.ts` | Kennzahlen-Berechnung (mit Tests) |
+| `src/lib/rating.ts` | Ampel-Regeln und Standardschwellen |
+| `src/lib/outlook.ts` | KI-Auswertung des Ausblicks |
+| `src/lib/refresh.ts` | Täglicher Datenabgleich |
+| `src/app/(app)/` | Dashboard, Kauf erfassen, Detailseite, Einstellungen |
+| `src/app/api/cron/refresh` | Endpunkt für den Cronjob |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung.

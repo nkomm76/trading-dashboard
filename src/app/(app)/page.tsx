@@ -1,0 +1,60 @@
+import Link from "next/link";
+import { loadPortfolio } from "@/lib/portfolio";
+import { db } from "@/lib/db";
+import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
+import { PositionsTable } from "@/components/positions-table";
+import { RefreshButton } from "@/components/refresh-button";
+
+export default async function DashboardPage() {
+  const { positions, totals, fxAsOf } = await loadPortfolio();
+  const lastRun = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });
+
+  if (!positions.length) {
+    return (
+      <div className="card p-8 text-center">
+        <h1 className="mb-2 text-lg font-semibold">Noch keine Positionen</h1>
+        <p className="mb-4 text-sm text-muted">Erfasse deinen ersten Kauf, dann erscheinen hier Kurse, Kennzahlen und die Ampel.</p>
+        <Link href="/kauf" className="btn">Kauf erfassen</Link>
+      </div>
+    );
+  }
+
+  const tiles = [
+    { label: "Depotwert", value: fmtMoney(totals.value) },
+    { label: "Gewinn / Verlust", value: fmtMoney(totals.gain), tone: totals.gain === undefined ? "" : totals.gain >= 0 ? "text-light-green" : "text-light-red" },
+    { label: "Dividenden (12 Monate)", value: fmtMoney(totals.dividend) },
+    { label: "Dividendenrendite", value: fmtPct(totals.yield) },
+    { label: "Yield on Cost", value: fmtPct(totals.yieldOnCost) },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Übersicht</h1>
+          <p className="text-xs text-muted">
+            Letzte Aktualisierung: {lastRun?.finishedAt ? new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(lastRun.finishedAt) : "–"}
+            {fxAsOf && ` · Wechselkurse EZB vom ${fmtDate(fxAsOf)}`}
+          </p>
+        </div>
+        <RefreshButton />
+      </div>
+
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {tiles.map((t) => (
+          <div key={t.label} className="card p-4">
+            <div className="text-xs text-muted">{t.label}</div>
+            <div className={`tabular mt-1 text-lg font-semibold ${t.tone ?? ""}`}>{t.value}</div>
+          </div>
+        ))}
+      </section>
+
+      <PositionsTable positions={positions} />
+
+      <p className="text-xs text-muted">
+        Fahre über einen Wert, um Quelle und Stichtag zu sehen. „–“ bedeutet: keine Quelle verfügbar. Hochgestellt „Jahr“ = Jahreswert, weil keine Quartalszahl vorliegt.
+        Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung. Kaufkosten in EUR werden zum aktuellen Wechselkurs umgerechnet.
+      </p>
+    </div>
+  );
+}
