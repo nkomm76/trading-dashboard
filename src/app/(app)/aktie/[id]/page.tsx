@@ -27,6 +27,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
       snapshots: { orderBy: { date: "desc" }, take: 1 },
       ratings: { orderBy: { date: "desc" }, take: 1 },
       outlooks: { orderBy: { period: "desc" }, take: 1 },
+      dividends: { where: { status: "CONFIRMED" }, orderBy: { exDate: "desc" } },
     },
   });
   if (!stock) notFound();
@@ -194,6 +195,13 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
             ? `Bestand ${fmtNum(pos.quantity, pos.quantity % 1 ? 3 : 0)} Stück · Ø Einstand ${fmtMoney(pos.avgCost, cur)}`
             : "Komplett verkauft – Kennzahlen zeigen den letzten Datenstand und werden nicht mehr aktualisiert."}
         </p>
+        {stock.dividends.length > 0 && (
+          <p className="mb-3 text-sm">
+            Erhaltene Dividenden: <span className="tabular font-medium">{fmtMoney(stock.dividends.reduce((a, d) => a + Number(d.netEur ?? 0), 0))}</span> netto aus{" "}
+            {stock.dividends.length} Zahlung{stock.dividends.length === 1 ? "" : "en"} ·{" "}
+            <a href="/dividenden" className="text-accent">Details</a>
+          </p>
+        )}
         <ul className="space-y-1 text-sm">
           {stock.purchases.map((p) => (
             <li key={p.id} className="tabular">

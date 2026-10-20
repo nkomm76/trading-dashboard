@@ -5,11 +5,13 @@ import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { PositionsTable } from "@/components/positions-table";
 import { RefreshButton } from "@/components/refresh-button";
 import { refreshIfStale } from "@/lib/refresh";
+import { loadDividends } from "@/lib/dividend-data";
 
 export default async function DashboardPage() {
   // Kein Cronjob im lokalen Betrieb: beim Öffnen nachladen, wenn die Daten älter als 12 Stunden sind
   const refreshing = await refreshIfStale();
   const { positions, closed, totals, fxAsOf } = await loadPortfolio();
+  const dividends = await loadDividends();
   const lastRun = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });
 
   if (!positions.length && !closed.length) {
@@ -27,7 +29,8 @@ export default async function DashboardPage() {
     { label: "Depotwert", value: fmtMoney(totals.value) },
     { label: "Gewinn / Verlust (offen)", value: fmtMoney(totals.gain), tone: tone(totals.gain) },
     ...(totals.hasSales ? [{ label: "Realisiert (Verkäufe)", value: fmtMoney(totals.realized), tone: tone(totals.realized) }] : []),
-    { label: "Dividenden (12 Monate)", value: fmtMoney(totals.dividend) },
+    { label: "Dividenden erwartet (12 Mon.)", value: fmtMoney(totals.dividend) },
+    { label: `Dividenden erhalten ${dividends.thisYear}`, value: fmtMoney(dividends.totals.thisYear), href: "/dividenden" },
     { label: "Dividendenrendite", value: fmtPct(totals.yield) },
     { label: "Yield on Cost", value: fmtPct(totals.yieldOnCost) },
   ];
@@ -46,11 +49,13 @@ export default async function DashboardPage() {
         <RefreshButton />
       </div>
 
-      <section className={`grid grid-cols-2 gap-3 ${totals.hasSales ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+      <section className={`grid grid-cols-2 gap-3 ${totals.hasSales ? "md:grid-cols-4 xl:grid-cols-7" : "md:grid-cols-3 xl:grid-cols-6"}`}>
         {tiles.map((t) => (
           <div key={t.label} className="card p-4">
             <div className="text-xs text-muted">{t.label}</div>
-            <div className={`tabular mt-1 text-lg font-semibold ${t.tone ?? ""}`}>{t.value}</div>
+            <div className={`tabular mt-1 text-lg font-semibold ${"tone" in t ? t.tone : ""}`}>
+              {"href" in t && t.href ? <Link href={t.href} className="hover:text-accent">{t.value}</Link> : t.value}
+            </div>
           </div>
         ))}
       </section>

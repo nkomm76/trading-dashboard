@@ -21,6 +21,7 @@ model Stock {
   snapshots Snapshot[]
   outlooks  Outlook[]
   ratings   Rating[]
+  dividends Dividend[]
 }
 
 enum TxType {
@@ -110,4 +111,26 @@ model RefreshLog {
   finishedAt DateTime?
   ok         Boolean   @default(false)
   message    String?   @db.Text
+}
+
+enum DividendStatus {
+  CONFIRMED
+  DISMISSED
+}
+
+// Erhaltene (bestätigte) oder bewusst ignorierte Dividendenzahlung je Ex-Tag
+model Dividend {
+  id        Int            @id @default(autoincrement())
+  stockId   Int
+  stock     Stock          @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  exDate    DateTime       @db.Date
+  status    DividendStatus @default(CONFIRMED)
+  quantity  Decimal?       @db.Decimal(18, 6) // Stück am Ex-Tag
+  perShare  Decimal?       @db.Decimal(18, 6) // je Aktie in Handelswährung (laut Quelle)
+  grossEur  Decimal?       @db.Decimal(18, 2)
+  netEur    Decimal?       @db.Decimal(18, 2) // Gutschrift laut Abrechnung
+  note      String?        @db.VarChar(255)
+  createdAt DateTime       @default(now())
+
+  @@unique([stockId, exDate])
 }

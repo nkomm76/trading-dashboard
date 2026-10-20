@@ -161,3 +161,70 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   await saveThresholds(t);
   return { ok: "Gespeichert. Die Ampeln werden beim nächsten Aktualisieren neu berechnet." };
 }
+
+// --- Dividenden ---
+
+const DividendSchema = z.object({
+  stockId: z.coerce.number().int().positive("Bitte eine Aktie wählen"),
+  exDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum fehlt"),
+  netEur: z.coerce.number().nonnegative("Nettobetrag fehlt"),
+  grossEur: z.coerce.number().nonnegative().optional(),
+  quantity: z.coerce.number().positive().optional(),
+  perShare: z.coerce.number().positive().optional(),
+  note: z.string().trim().max(255).optional(),
+});
+
+const optNum = (v: FormDataEntryValue | null) => {
+  const n = parseNum(v);
+  return n === "" ? undefined : n;
+};
+
+export async function saveDividend(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAuth();
+  const parsed = DividendSchema.safeParse({
+    stockId: formData.get("stockId"),
+    exDate: formData.get("exDate"),
+    netEur: parseNum(formData.get("netEur")) || undefined,
+    grossEur: optNum(formData.get("grossEur")),
+    quantity: optNum(formData.get("quantity")),
+    perShare: optNum(formData.get("perShare")),
+    note: String(formData.get("note") ?? "") || undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const d = parsed.data;
+  if (d.grossEur !== undefined && d.netEur > d.grossEur) return { error: "Netto kann nicht höher sein als brutto." };
+  const data = { status: "CONFIRMED" as const, quantity: d.quantity, perShare: d.perShare, grossEur: d.grossEur, netEur: d.netEur, note: d.note };
+  await db.dividend.upsert({
+    where: { stockId_exDate: { stockId: d.stockId, exDate: new Date(d.exDate) } },
+    create: { stockId: d.stockId, exDate: new Date(d.exDate), ...data },
+    update: data,
+  });
+  revalidatePath("/", "layout");
+  return { ok: "Dividende gespeichert." };
+}
+
+export async function dismissDividend(formData: FormData) {
+  await requireAuth();
+  const stockId = Number(formData.get("stockId"));
+  const exDate = new Date(String(formData.get("exDate")));
+  await db.dividend.upsert({
+    where: { stockId_exDate: { stockId, exDate } },
+    create: { stockId, exDate, status: "DISMISSED" },
+    update: { status: "DISMISSED" },
+  });
+  revalidatePath("/", "layout");
+}
+
+export async function deleteDividend(formData: FormData) {
+  await requireAuth();
+  await db.dividend.delete({ where: { id: Number(formData.get("id")) } });
+  revalidatePath("/", "layout");
+}
+
+export async function restoreDividend(formData: FormData) {
+  await requireAuth();
+  const stockId = Number(formData.get("stockId"));
+  const exDate = new Date(String(formData.get("exDate")));
+  await db.dividend.deleteMany({ where: { stockId, exDate, status: "DISMISSED" } });
+  revalidatePath("/", "layout");
+}

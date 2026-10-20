@@ -62,3 +62,38 @@ export function EpsFcfChart({ quarterly, annual, currency }: { quarterly: Row[];
     </div>
   );
 }
+
+const euro = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }) : "–");
+const euro2 = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { style: "currency", currency: "EUR" }) : "–");
+
+export function DividendYearChart({ data }: { data: { year: number; net: number }[] }) {
+  return (
+    <div className="h-56">
+      <ResponsiveContainer>
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="year" tick={{ fontSize: 12, fill: "var(--muted)" }} />
+          <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} tickFormatter={euro} width={60} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(v) => [euro2(v), "Netto"]} />
+          <Bar dataKey="net" fill="var(--green)" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function DividendMonthChart({ data }: { data: { label: string; net: number }[] }) {
+  return (
+    <div className="h-56">
+      <ResponsiveContainer>
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted)" }} interval={0} />
+          <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} tickFormatter={euro} width={60} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(v) => [euro2(v), "Netto"]} />
+          <Bar dataKey="net" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
