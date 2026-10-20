@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import type { Metrics } from "@/lib/metrics";
 import type { LightColor, Reason } from "@/lib/rating";
 import type { Sourced } from "@/lib/data/types";
-import { fmtBig, fmtDate, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
+import { fmtBig, fmtDate, fmtMoney, fmtMonths, fmtNum, fmtPct } from "@/lib/format";
 import { Light, LIGHT_LABEL } from "@/components/light";
 import { Value } from "@/components/value";
 import { DividendChart, EpsFcfChart } from "@/components/charts";
@@ -50,7 +50,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
         ["Dividendenrendite", m.dividendYield, (v: number) => fmtPct(v)],
         ["Yield on Cost", m.yieldOnCost, (v: number) => fmtPct(v)],
         ["Ausschüttungsrhythmus", m.frequency, (v: string) => v],
-        ["Ex-Tage üblich im", m.exMonths, (v: string[]) => v.join(", ")],
+        ["Monate der Ex-Tage", m.exMonths, (v: string[]) => fmtMonths(v)],
         ["Letzte Zahlung", m.lastDividend, (v: { date: string; amount: number }) => `${fmtDate(v.date)} · ${fmtMoney(v.amount, cur)}`],
         ["Nächster Ex-Tag", m.nextExDividend, (v: string) => fmtDate(v)],
         ["Dividendenwachstum CAGR 3 J.", m.dividendCagr3, (v: number) => fmtPct(v)],

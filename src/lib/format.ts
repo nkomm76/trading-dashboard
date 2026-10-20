@@ -23,3 +23,6 @@ export const fmtDate = (iso: string | undefined) =>
 /** Tooltip-Text mit Herkunft eines Werts */
 export const sourceHint = (s: Sourced<unknown> | undefined) =>
   s ? [s.source, `Stand ${fmtDate(s.asOf)}`, s.period, s.note].filter(Boolean).join(" · ") : "Keine Quelle verfügbar";
+
+/** Monate der Ex-Tage, bei Monatszahlern kurz „jeden Monat“ */
+export const fmtMonths = (months: string[]) => (months.length >= 12 ? "jeden Monat" : months.join(", "));

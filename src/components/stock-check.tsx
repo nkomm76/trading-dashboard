@@ -85,7 +85,7 @@ export function StockCheck() {
                 <p className="mb-1 text-xs text-muted">Ausschüttungen</p>
                 <p>
                   <span className="font-medium">{r.schedule.frequency ? r.schedule.frequency[0].toUpperCase() + r.schedule.frequency.slice(1) : "Rhythmus unbekannt"}</span>
-                  {r.schedule.months && ` · Ex-Tage üblich im ${r.schedule.months.join(", ")}`}
+                  {r.schedule.months && (r.schedule.months.length >= 12 ? " · Ex-Tage jeden Monat" : ` · Ex-Tage üblich im ${r.schedule.months.join(", ")}`)}
                 </p>
                 <p className="tabular text-xs text-muted">
                   {r.schedule.last && `Letzte: ${fmtDate(r.schedule.last.date)} – ${fmtMoney(r.schedule.last.amount, r.currency)} je Aktie`}

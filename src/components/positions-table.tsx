@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Position } from "@/lib/portfolio";
 import type { LightColor } from "@/lib/rating";
-import { fmtBig, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
+import { fmtBig, fmtMoney, fmtMonths, fmtNum, fmtPct } from "@/lib/format";
 import { Light } from "./light";
 import { Value } from "./value";
 
@@ -57,7 +57,7 @@ const COLS: Col[] = [
     render: (p) => (
       <>
         <Value s={p.metrics.frequency} format={(v) => v} />
-        {p.metrics.exMonths && <span className="block text-xs text-muted">{p.metrics.exMonths.value.join(", ")}</span>}
+        {p.metrics.exMonths && <span className="block text-xs text-muted">{fmtMonths(p.metrics.exMonths.value)}</span>}
       </>
     ),
   },
