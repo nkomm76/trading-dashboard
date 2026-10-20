@@ -9,10 +9,10 @@ import { refreshIfStale } from "@/lib/refresh";
 export default async function DashboardPage() {
   // Kein Cronjob im lokalen Betrieb: beim Öffnen nachladen, wenn die Daten älter als 12 Stunden sind
   const refreshing = await refreshIfStale();
-  const { positions, totals, fxAsOf } = await loadPortfolio();
+  const { positions, closed, totals, fxAsOf } = await loadPortfolio();
   const lastRun = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });
 
-  if (!positions.length) {
+  if (!positions.length && !closed.length) {
     return (
       <div className="card p-8 text-center">
         <h1 className="mb-2 text-lg font-semibold">Noch keine Positionen</h1>
@@ -22,9 +22,11 @@ export default async function DashboardPage() {
     );
   }
 
+  const tone = (v: number | undefined) => (v === undefined ? "" : v >= 0 ? "text-light-green" : "text-light-red");
   const tiles = [
     { label: "Depotwert", value: fmtMoney(totals.value) },
-    { label: "Gewinn / Verlust", value: fmtMoney(totals.gain), tone: totals.gain === undefined ? "" : totals.gain >= 0 ? "text-light-green" : "text-light-red" },
+    { label: "Gewinn / Verlust (offen)", value: fmtMoney(totals.gain), tone: tone(totals.gain) },
+    ...(totals.hasSales ? [{ label: "Realisiert (Verkäufe)", value: fmtMoney(totals.realized), tone: tone(totals.realized) }] : []),
     { label: "Dividenden (12 Monate)", value: fmtMoney(totals.dividend) },
     { label: "Dividendenrendite", value: fmtPct(totals.yield) },
     { label: "Yield on Cost", value: fmtPct(totals.yieldOnCost) },
@@ -44,7 +46,7 @@ export default async function DashboardPage() {
         <RefreshButton />
       </div>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <section className={`grid grid-cols-2 gap-3 ${totals.hasSales ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
         {tiles.map((t) => (
           <div key={t.label} className="card p-4">
             <div className="text-xs text-muted">{t.label}</div>
@@ -53,11 +55,33 @@ export default async function DashboardPage() {
         ))}
       </section>
 
-      <PositionsTable positions={positions} />
+      {positions.length > 0 ? (
+        <PositionsTable positions={positions} />
+      ) : (
+        <div className="card p-6 text-sm text-muted">Aktuell keine Aktien im Bestand.</div>
+      )}
+
+      {closed.length > 0 && (
+        <section className="card">
+          <h2 className="border-b border-border px-4 py-3 font-semibold">Verkaufte Positionen</h2>
+          <ul className="divide-y divide-border text-sm">
+            {closed.map((p) => (
+              <li key={p.stockId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <Link href={`/aktie/${p.stockId}`} className="hover:text-accent">
+                  {p.name} <span className="text-xs text-muted">{p.symbol}</span>
+                </Link>
+                <span className={`tabular ${tone(p.realizedEur)}`} title="Realisierter Gewinn nach Gebühren">
+                  {fmtMoney(p.realizedEur)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <p className="text-xs text-muted">
         Fahre über einen Wert, um Quelle und Stichtag zu sehen. „–“ bedeutet: keine Quelle verfügbar. Hochgestellt „Jahr“ = Jahreswert, weil keine Quartalszahl vorliegt.
-        Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung. Kaufkosten in EUR werden zum aktuellen Wechselkurs umgerechnet.
+        Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung. Kauf- und Verkaufsbeträge in Fremdwährung werden zum aktuellen Wechselkurs in EUR umgerechnet; realisierte Gewinne nach der Durchschnittskostenmethode inkl. Gebühren.
       </p>
     </div>
   );

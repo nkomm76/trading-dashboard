@@ -7,6 +7,8 @@ import { fmtBig, fmtDate, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
 import { Light, LIGHT_LABEL } from "@/components/light";
 import { Value } from "@/components/value";
 import { DividendChart, EpsFcfChart } from "@/components/charts";
+import { computePosition } from "@/lib/position";
+import { toTx } from "@/lib/portfolio";
 
 type Series = {
   dividendsByYear: { year: number; total: number }[];
@@ -36,6 +38,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
   const reasons = (rating?.reasons ?? []) as Reason[];
   const outlook = stock.outlooks[0];
   const cur = stock.currency;
+  const pos = computePosition(stock.purchases.map(toTx));
   const fcur = m.financialCurrency;
 
   const groups: { title: string; rows: [string, Sourced<unknown> | undefined, (v: never) => string][] }[] = [
@@ -180,10 +183,21 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
       )}
 
       <section className="card p-5">
-        <h2 className="mb-3 font-semibold">Deine Käufe</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Deine Buchungen</h2>
+          <div className="flex gap-2 text-sm">
+            {pos.quantity > 0 && <a href={`/kauf?sell=${stock.id}`} className="btn-secondary">Verkaufen</a>}
+          </div>
+        </div>
+        <p className="mb-3 text-sm text-muted">
+          {pos.quantity > 0
+            ? `Bestand ${fmtNum(pos.quantity, pos.quantity % 1 ? 3 : 0)} Stück · Ø Einstand ${fmtMoney(pos.avgCost, cur)}`
+            : "Komplett verkauft – Kennzahlen zeigen den letzten Datenstand und werden nicht mehr aktualisiert."}
+        </p>
         <ul className="space-y-1 text-sm">
           {stock.purchases.map((p) => (
             <li key={p.id} className="tabular">
+              <span className={p.type === "SELL" ? "text-light-orange" : "text-light-green"}>{p.type === "SELL" ? "Verkauf" : "Kauf"}</span>{" "}
               {fmtDate(p.date.toISOString())}: {fmtNum(Number(p.quantity), Number(p.quantity) % 1 ? 3 : 0)} Stück zu {fmtMoney(Number(p.price), cur)}
               {Number(p.fees) > 0 && ` + ${fmtMoney(Number(p.fees))} Gebühren`}
               {p.note && <span className="text-muted"> – {p.note}</span>}

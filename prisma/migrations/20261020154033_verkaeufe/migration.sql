@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `Purchase` ADD COLUMN `type` ENUM('BUY', 'SELL') NOT NULL DEFAULT 'BUY';

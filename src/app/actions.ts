@@ -9,6 +9,8 @@ import { createSession, destroySession, requireAuth } from "@/lib/session";
 import { fetchMarketData } from "@/lib/data/yahoo";
 import { refreshAll, refreshStock } from "@/lib/refresh";
 import { getFxRates, saveThresholds } from "@/lib/settings";
+import { computePosition } from "@/lib/position";
+import { toTx } from "@/lib/portfolio";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -43,6 +45,7 @@ export async function logout() {
 }
 
 const PurchaseSchema = z.object({
+  type: z.enum(["BUY", "SELL"]),
   symbol: z.string().trim().min(1, "Bitte eine Aktie auswählen").max(32),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum fehlt"),
   price: z.coerce.number().positive("Kurs muss größer als 0 sein"),
@@ -61,6 +64,7 @@ const parseNum = (v: FormDataEntryValue | null) => {
 export async function savePurchase(_: FormState, formData: FormData): Promise<FormState> {
   await requireAuth();
   const parsed = PurchaseSchema.safeParse({
+    type: formData.get("type") === "SELL" ? "SELL" : "BUY",
     symbol: String(formData.get("symbol") ?? "").toUpperCase(),
     date: formData.get("date"),
     price: parseNum(formData.get("price")),
@@ -73,7 +77,8 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
   const p = parsed.data;
   const id = Number(formData.get("id") ?? 0);
 
-  let stock = await db.stock.findUnique({ where: { symbol: p.symbol } });
+  let stock = await db.stock.findUnique({ where: { symbol: p.symbol }, include: { purchases: true } });
+  if (!stock && p.type === "SELL") return { error: "Diese Aktie ist nicht in deinem Depot." };
   if (!stock) {
     let market;
     try {
@@ -83,30 +88,49 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
     }
     stock = await db.stock.create({
       data: { symbol: p.symbol, name: market.name, currency: market.currency, exchange: market.exchange, sector: market.sector, isin: p.isin },
+      include: { purchases: true },
     });
   }
 
-  const data = { stockId: stock.id, date: new Date(p.date), price: p.price, quantity: p.quantity, fees: p.fees, note: p.note };
+  // Bestand mit der neuen bzw. geänderten Buchung prüfen: nie mehr verkaufen als vorhanden
+  const others = stock.purchases.filter((x) => x.id !== id).map(toTx);
+  const after = computePosition([...others, { type: p.type, date: p.date, price: p.price, quantity: p.quantity, fees: p.fees }]);
+  if (after.oversold) {
+    return { error: `Am ${new Date(after.oversold.date).toLocaleDateString("de-DE")} wären ${after.oversold.missing.toLocaleString("de-DE")} Stück mehr verkauft als im Bestand.` };
+  }
+
+  const data = { type: p.type, stockId: stock.id, date: new Date(p.date), price: p.price, quantity: p.quantity, fees: p.fees, note: p.note };
   if (id) await db.purchase.update({ where: { id }, data });
   else await db.purchase.create({ data });
 
-  // Kennzahlen direkt laden, damit der Kauf sofort im Dashboard erscheint (KI-Ausblick folgt beim nächtlichen Lauf)
-  try {
-    await refreshStock(stock.id, (await getFxRates())?.rates, { outlook: false });
-  } catch {
-    // Daten folgen beim nächsten Refresh
+  // Kennzahlen direkt laden, damit die Position sofort im Dashboard erscheint (KI-Ausblick folgt beim nächsten Lauf)
+  if (after.quantity > 0) {
+    try {
+      await refreshStock(stock.id, (await getFxRates())?.rates, { outlook: false });
+    } catch {
+      // Daten folgen beim nächsten Refresh
+    }
   }
   revalidatePath("/", "layout");
-  return { ok: id ? "Kauf aktualisiert." : `Kauf von ${stock.name} gespeichert.` };
+  const label = p.type === "SELL" ? "Verkauf" : "Kauf";
+  if (id) return { ok: `${label} aktualisiert.` };
+  if (p.type === "SELL" && after.quantity === 0) return { ok: `Verkauf gespeichert – ${stock.name} ist komplett verkauft.` };
+  return { ok: `${label} von ${stock.name} gespeichert.` };
 }
 
-export async function deletePurchase(formData: FormData) {
+export async function deletePurchase(_: FormState, formData: FormData): Promise<FormState> {
   await requireAuth();
   const id = Number(formData.get("id"));
-  const purchase = await db.purchase.delete({ where: { id } });
-  const remaining = await db.purchase.count({ where: { stockId: purchase.stockId } });
-  if (!remaining) await db.stock.delete({ where: { id: purchase.stockId } });
+  const tx = await db.purchase.findUnique({ where: { id }, include: { stock: { include: { purchases: true } } } });
+  if (!tx) return { error: "Buchung nicht gefunden." };
+  const remaining = tx.stock.purchases.filter((x) => x.id !== id);
+  if (computePosition(remaining.map(toTx)).oversold) {
+    return { error: "Löschen nicht möglich: Danach wären mehr Aktien verkauft als gekauft. Lösche zuerst den Verkauf." };
+  }
+  await db.purchase.delete({ where: { id } });
+  if (!remaining.length) await db.stock.delete({ where: { id: tx.stockId } });
   revalidatePath("/", "layout");
+  return { ok: "Gelöscht." };
 }
 
 export async function runRefresh(withOutlook: boolean): Promise<FormState> {

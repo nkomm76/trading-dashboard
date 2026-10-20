@@ -8,6 +8,8 @@ import { annualTotals, computeMetrics, fcfOf } from "./metrics";
 import { evaluateOutlook } from "./outlook";
 import { rate } from "./rating";
 import { getThresholds } from "./settings";
+import { computePosition } from "./position";
+import { toTx } from "./portfolio";
 
 const today = () => new Date(new Date().toISOString().slice(0, 10));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,8 +45,8 @@ export async function refreshStock(stockId: number, rates: Record<string, number
     if (cik) market.quarterly = mergeRows(market.quarterly, await fetchSecQuarterly(cik).catch(() => []));
   }
 
-  const qty = stock.purchases.reduce((s, p) => s + Number(p.quantity), 0);
-  const avgCost = qty > 0 ? stock.purchases.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0) / qty : undefined;
+  const pos = computePosition(stock.purchases.map(toTx));
+  const avgCost = pos.quantity > 0 ? pos.avgCost : undefined;
 
   const metrics = computeMetrics({
     market,
@@ -100,7 +102,9 @@ export async function refreshAll(opts: { outlook: boolean } = { outlook: true })
   }
   const rates = fx?.value ?? undefined;
 
-  const stocks = await db.stock.findMany({ where: { purchases: { some: {} } }, select: { id: true, symbol: true } });
+  // Nur Aktien im Bestand aktualisieren – verkaufte Positionen behalten ihren letzten Datenstand
+  const candidates = await db.stock.findMany({ where: { purchases: { some: {} } }, include: { purchases: true } });
+  const stocks = candidates.filter((s) => computePosition(s.purchases.map(toTx)).quantity > 0);
   for (const s of stocks) {
     try {
       await refreshStock(s.id, rates, opts);

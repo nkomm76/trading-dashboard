@@ -23,8 +23,15 @@ model Stock {
   ratings   Rating[]
 }
 
+enum TxType {
+  BUY
+  SELL
+}
+
+// Kauf oder Verkauf einer Aktie
 model Purchase {
   id        Int      @id @default(autoincrement())
+  type      TxType   @default(BUY)
   stockId   Int
   stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
   date      DateTime @db.Date

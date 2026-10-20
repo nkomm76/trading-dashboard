@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             Dividenden-Dashboard
           </Link>
           <Link href="/" className="hover:text-accent">Übersicht</Link>
-          <Link href="/kauf" className="hover:text-accent">Kauf erfassen</Link>
+          <Link href="/kauf" className="hover:text-accent">Kauf / Verkauf</Link>
           <Link href="/einstellungen" className="hover:text-accent">Einstellungen</Link>
           <form action={logout}>
             <button className="text-muted hover:text-foreground">Abmelden</button>
