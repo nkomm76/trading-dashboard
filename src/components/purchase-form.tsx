@@ -23,11 +23,22 @@ const today = () => new Date().toISOString().slice(0, 10);
 const de = (v: number) => String(v).replace(".", ",");
 const fmtQty = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 3 });
 
-export function PurchaseForm({ initial, holdings, preselectSell }: { initial?: Initial; holdings: Holding[]; preselectSell?: string }) {
+export function PurchaseForm({
+  initial,
+  holdings,
+  preselectSell,
+  preselectBuy,
+}: {
+  initial?: Initial;
+  holdings: Holding[];
+  preselectSell?: string;
+  preselectBuy?: { symbol: string; name: string };
+}) {
   const [type, setType] = useState<"BUY" | "SELL">(initial?.type ?? (preselectSell ? "SELL" : "BUY"));
-  const [query, setQuery] = useState(initial ? `${initial.name} (${initial.symbol})` : "");
+  const start = initial ?? preselectBuy;
+  const [query, setQuery] = useState(start ? `${start.name} (${start.symbol})` : "");
   const [hits, setHits] = useState<SearchHit[]>([]);
-  const [picked, setPicked] = useState<{ symbol: string; name: string } | undefined>(initial && { symbol: initial.symbol, name: initial.name });
+  const [picked, setPicked] = useState<{ symbol: string; name: string } | undefined>(start && { symbol: start.symbol, name: start.name });
   const [sellSymbol, setSellSymbol] = useState(initial?.type === "SELL" ? initial.symbol : (preselectSell ?? ""));
   const [isin, setIsin] = useState("");
   const formRef = useRef<HTMLFormElement>(null);

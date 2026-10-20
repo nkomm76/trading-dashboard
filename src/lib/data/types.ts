@@ -18,6 +18,7 @@ export type StatementRow = {
   totalDebt?: number;
   stockholdersEquity?: number;
   cashDividendsPaid?: number; // negativ
+  totalRevenue?: number;
 };
 
 export type MarketData = {

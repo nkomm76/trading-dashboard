@@ -4,16 +4,19 @@ import type { StatementRow } from "./types";
 // SEC EDGAR verlangt einen User-Agent mit Kontaktangabe.
 const UA = process.env.SEC_USER_AGENT ?? "dividenden-dashboard (private use)";
 
-let tickerMap: Map<string, string> | null = null;
+const cikCache = new Map<string, string | undefined>();
 
+// Über die EDGAR-Suche – die Ticker-Liste auf www.sec.gov verlangt eine E-Mail im User-Agent
 export async function lookupCik(ticker: string): Promise<string | undefined> {
-  if (!tickerMap) {
-    const res = await fetch("https://www.sec.gov/files/company_tickers.json", { headers: { "User-Agent": UA } });
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as Record<string, { cik_str: number; ticker: string }>;
-    tickerMap = new Map(Object.values(json).map((e) => [e.ticker.toUpperCase(), String(e.cik_str).padStart(10, "0")]));
-  }
-  return tickerMap.get(ticker.toUpperCase().replace(".", "-"));
+  const t = ticker.toUpperCase().replace(".", "-");
+  if (cikCache.has(t)) return cikCache.get(t);
+  const res = await fetch(`https://efts.sec.gov/LATEST/search-index?keysTyped=${encodeURIComponent(t)}`, { headers: { "User-Agent": UA } });
+  if (!res.ok) return undefined;
+  const json = (await res.json()) as { hits?: { hits?: { _id: string; _source?: { tickers?: string } }[] } };
+  const hit = json.hits?.hits?.find((h) => (h._source?.tickers ?? "").split(/,\s*/).some((x) => x.toUpperCase() === t));
+  const cik = hit ? hit._id.padStart(10, "0") : undefined;
+  cikCache.set(t, cik);
+  return cik;
 }
 
 type Fact = { start?: string; end: string; val: number; form: string; fp?: string };
@@ -47,4 +50,24 @@ export async function fetchSecQuarterly(cik: string): Promise<StatementRow[]> {
   return [...rows.values()]
     .filter((r) => r.date >= cutoff.toISOString().slice(0, 10))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+const REVENUE_TAGS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerIncludingAssessedTax"];
+
+/** Jahreswerte (10-K, Geschäftsjahr) für Umsatz und verwässertes EPS – längere Historie als Yahoo. */
+export async function fetchSecAnnual(cik: string): Promise<StatementRow[]> {
+  const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": UA } });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { facts?: { "us-gaap"?: Record<string, { units: Record<string, Fact[]> }> } };
+  const gaap = json.facts?.["us-gaap"] ?? {};
+  const isYear = (f: Fact) => f.form === "10-K" && f.start !== undefined && Math.abs(daysBetween(f.start, f.end) - 365) <= 20;
+
+  const rows = new Map<string, StatementRow>();
+  const row = (end: string) => rows.get(end) ?? rows.set(end, { date: end }).get(end)!;
+  for (const f of gaap.EarningsPerShareDiluted?.units["USD/shares"] ?? []) if (isYear(f)) row(f.end).dilutedEPS = f.val;
+  // Erste Umsatz-Kennung mit Daten je Jahr verwenden (Unternehmen wechseln die Kennung über die Jahre)
+  for (const tag of REVENUE_TAGS) {
+    for (const f of gaap[tag]?.units.USD ?? []) if (isYear(f)) row(f.end).totalRevenue ??= f.val;
+  }
+  return [...rows.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

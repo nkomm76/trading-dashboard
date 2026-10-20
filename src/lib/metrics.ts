@@ -62,7 +62,9 @@ export function dividendCagr(divs: DividendPayment[], years: number, asOf = toda
 export function detectFrequency(divs: DividendPayment[], asOf = today()): Frequency | undefined {
   const recent = divs.filter((d) => daysBetween(d.date, asOf) >= 0 && daysBetween(d.date, asOf) < 730);
   if (!recent.length) return undefined;
-  const perYear = recent.length / 2;
+  // Bei kurzer Historie (z. B. junge Aktie) nur den tatsächlich abgedeckten Zeitraum zählen, mindestens 1 Jahr
+  const span = daysBetween(recent[0].date, asOf) / 365;
+  const perYear = recent.length / Math.min(2, Math.max(1, span));
   if (perYear >= 10) return "monatlich";
   if (perYear >= 3.5) return "quartalsweise";
   if (perYear >= 1.5) return "halbjährlich";

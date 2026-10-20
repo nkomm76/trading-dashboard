@@ -11,6 +11,7 @@ import { refreshAll, refreshStock } from "@/lib/refresh";
 import { getFxRates, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
+import { runCheck, type CheckResponse } from "@/lib/check-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -227,4 +228,14 @@ export async function restoreDividend(formData: FormData) {
   const exDate = new Date(String(formData.get("exDate")));
   await db.dividend.deleteMany({ where: { stockId, exDate, status: "DISMISSED" } });
   revalidatePath("/", "layout");
+}
+
+// --- Aktien Check ---
+
+export async function checkStock(_: CheckResponse | undefined, formData: FormData): Promise<CheckResponse> {
+  await requireAuth();
+  const query = String(formData.get("query") ?? "").trim();
+  if (query.length < 2) return { listings: [], error: "Bitte eine ISIN oder ein Kürzel eingeben." };
+  const symbol = String(formData.get("symbol") ?? "") || undefined;
+  return runCheck(query, symbol);
 }

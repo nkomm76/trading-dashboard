@@ -20,6 +20,7 @@ function toRows(rows: Record<string, unknown>[]): StatementRow[] {
       totalDebt: num(r.totalDebt),
       stockholdersEquity: num(r.stockholdersEquity),
       cashDividendsPaid: num(r.cashDividendsPaid),
+      totalRevenue: num(r.totalRevenue),
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }

@@ -5,8 +5,8 @@ import { toTx } from "@/lib/portfolio";
 import { PurchaseForm, type Holding } from "@/components/purchase-form";
 import { DeleteButton } from "@/components/delete-button";
 
-export default async function TransactionsPage({ searchParams }: { searchParams: Promise<{ edit?: string; sell?: string }> }) {
-  const { edit, sell } = await searchParams;
+export default async function TransactionsPage({ searchParams }: { searchParams: Promise<{ edit?: string; sell?: string; buy?: string; name?: string }> }) {
+  const { edit, sell, buy, name } = await searchParams;
   const purchases = await db.purchase.findMany({ include: { stock: true }, orderBy: [{ date: "desc" }, { id: "desc" }] });
   const editing = edit ? purchases.find((p) => p.id === Number(edit)) : undefined;
 
@@ -25,9 +25,10 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       <section className="card h-fit p-5">
         <h1 className="mb-4 text-lg font-semibold">{editing ? (editing.type === "SELL" ? "Verkauf bearbeiten" : "Kauf bearbeiten") : "Kauf oder Verkauf erfassen"}</h1>
         <PurchaseForm
-          key={editing?.id ?? `new-${sell ?? ""}`}
+          key={editing?.id ?? `new-${sell ?? ""}-${buy ?? ""}`}
           holdings={holdings}
           preselectSell={sellStock?.symbol}
+          preselectBuy={buy ? { symbol: buy, name: name ?? buy } : undefined}
           initial={
             editing && {
               id: editing.id,
