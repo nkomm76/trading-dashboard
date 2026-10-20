@@ -49,7 +49,18 @@ const COLS: Col[] = [
   { key: "cagr", label: "CAGR 5J", title: "Dividendenwachstum p. a. über 5 Jahre", sort: (p) => p.metrics.dividendCagr5?.value, render: (p) => <Value s={p.metrics.dividendCagr5} format={(v) => fmtPct(v)} /> },
   { key: "de", label: "D/E", title: "Debt to Equity", sort: (p) => p.metrics.debtToEquity?.value, render: (p) => <Value s={p.metrics.debtToEquity} format={(v) => fmtNum(v)} /> },
   { key: "debt", label: "Neuversch.", title: "Veränderung Gesamtschulden ggü. Vorjahr", sort: (p) => p.metrics.debtChangeYoY?.value, render: (p) => <Value s={p.metrics.debtChangeYoY} format={(v) => (v > 0 ? "+" : "") + fmtPct(v)} /> },
-  { key: "freq", label: "Rhythmus", sort: (p) => p.metrics.frequency?.value, render: (p) => <Value s={p.metrics.frequency} format={(v) => v} /> },
+  {
+    key: "freq",
+    label: "Rhythmus",
+    title: "Ausschüttungsrhythmus und Monate der Ex-Tage",
+    sort: (p) => p.metrics.frequency?.value,
+    render: (p) => (
+      <>
+        <Value s={p.metrics.frequency} format={(v) => v} />
+        {p.metrics.exMonths && <span className="block text-xs text-muted">{p.metrics.exMonths.value.join(", ")}</span>}
+      </>
+    ),
+  },
   { key: "fcf", label: "FCF", title: "Free Cashflow (12 Monate)", sort: (p) => p.metrics.fcfTTM?.value, render: (p) => <Value s={p.metrics.fcfTTM} format={(v) => fmtBig(v, p.metrics.financialCurrency)} /> },
   { key: "eps", label: "EPS", title: "Gewinn je Aktie (12 Monate)", sort: (p) => p.metrics.epsTTM?.value, render: (p) => <Value s={p.metrics.epsTTM} format={(v) => fmtNum(v)} /> },
   { key: "outlook", label: "Ausblick", sort: (p) => p.outlookStatus, render: (p) => (p.outlookStatus ? OUTLOOK[p.outlookStatus] : <span className="text-muted">–</span>) },

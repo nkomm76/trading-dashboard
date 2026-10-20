@@ -80,6 +80,20 @@ export function StockCheck() {
               </div>
             </dl>
 
+            {r.schedule && (
+              <div className="mt-5 rounded-md bg-background p-3 text-sm">
+                <p className="mb-1 text-xs text-muted">Ausschüttungen</p>
+                <p>
+                  <span className="font-medium">{r.schedule.frequency ? r.schedule.frequency[0].toUpperCase() + r.schedule.frequency.slice(1) : "Rhythmus unbekannt"}</span>
+                  {r.schedule.months && ` · Ex-Tage üblich im ${r.schedule.months.join(", ")}`}
+                </p>
+                <p className="tabular text-xs text-muted">
+                  {r.schedule.last && `Letzte: ${fmtDate(r.schedule.last.date)} – ${fmtMoney(r.schedule.last.amount, r.currency)} je Aktie`}
+                  {r.schedule.nextExDate && ` · Nächster Ex-Tag: ${fmtDate(r.schedule.nextExDate)}`}
+                </p>
+              </div>
+            )}
+
             {state && state.listings.length > 1 && (
               <div className="mt-5 text-xs text-muted">
                 Andere Börsenplätze:{" "}

@@ -50,6 +50,8 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
         ["Dividendenrendite", m.dividendYield, (v: number) => fmtPct(v)],
         ["Yield on Cost", m.yieldOnCost, (v: number) => fmtPct(v)],
         ["Ausschüttungsrhythmus", m.frequency, (v: string) => v],
+        ["Ex-Tage üblich im", m.exMonths, (v: string[]) => v.join(", ")],
+        ["Letzte Zahlung", m.lastDividend, (v: { date: string; amount: number }) => `${fmtDate(v.date)} · ${fmtMoney(v.amount, cur)}`],
         ["Nächster Ex-Tag", m.nextExDividend, (v: string) => fmtDate(v)],
         ["Dividendenwachstum CAGR 3 J.", m.dividendCagr3, (v: number) => fmtPct(v)],
         ["Dividendenwachstum CAGR 5 J.", m.dividendCagr5, (v: number) => fmtPct(v)],

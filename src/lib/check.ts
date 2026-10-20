@@ -21,6 +21,7 @@ export type CheckResult = {
   price?: { value: number; asOf: string };
   expectedYield?: { value: number; basis: string };
   trailingYield?: number;
+  schedule?: { frequency?: string; months?: string[]; last?: { date: string; amount: number }; nextExDate?: string };
   items: CheckItem[];
   overall: LightColor;
   passed: number;
@@ -166,7 +167,8 @@ export function evaluateCheck(market: MarketData, opts: { growthRows?: Statement
   ];
   const rated = items.filter((i) => i.light !== "GREY");
   const overall = rated.length ? rated.reduce<LightColor>((w, i) => (ORDER[i.light] > ORDER[w] ? i.light : w), "GREEN") : "GREY";
-  const ttm = computeMetrics({ market, asOf }).dividendYield?.value;
+  const metrics = computeMetrics({ market, asOf });
+  const ttm = metrics.dividendYield?.value;
 
   return {
     symbol: market.symbol,
@@ -177,6 +179,14 @@ export function evaluateCheck(market: MarketData, opts: { growthRows?: Statement
     price: market.price && { value: market.price.value, asOf: market.price.asOf },
     expectedYield: expectedYield(market.dividends, market.price?.value, asOf),
     trailingYield: ttm,
+    schedule: market.dividends.length
+      ? {
+          frequency: metrics.frequency?.value,
+          months: metrics.exMonths?.value,
+          last: metrics.lastDividend?.value,
+          nextExDate: market.nextExDividend?.value,
+        }
+      : undefined,
     items,
     overall,
     passed: items.filter((i) => i.light === "GREEN").length,

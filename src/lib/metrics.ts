@@ -16,6 +16,8 @@ export type Metrics = {
   dividendCagr10?: Sourced;
   dividendCut?: Sourced<boolean>;
   frequency?: Sourced<Frequency>;
+  exMonths?: Sourced<string[]>;
+  lastDividend?: Sourced<{ date: string; amount: number }>;
   nextExDividend?: Sourced<string>;
   debtToEquity?: Sourced;
   debtChangeQoQ?: Sourced;
@@ -57,6 +59,18 @@ export function dividendCagr(divs: DividendPayment[], years: number, asOf = toda
   // Das Startjahr muss vollständig in der Historie liegen (erste Zahlung vor oder im Startjahr)
   if (!a || !b || !divs.length || Number(divs[0].date.slice(0, 4)) > start) return undefined;
   return Math.pow(b / a, 1 / years) - 1;
+}
+
+const MONTH_NAMES = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+/** Monate, in denen die Ex-Tage der letzten 12 Monate lagen (bei Jahreszahlern die letzten 24 Monate). */
+export function exDividendMonths(divs: DividendPayment[], asOf = today()): string[] | undefined {
+  const window = (days: number) => divs.filter((d) => daysBetween(d.date, asOf) >= 0 && daysBetween(d.date, asOf) < days);
+  let recent = window(365);
+  if (recent.length < 2) recent = window(730);
+  if (!recent.length) return undefined;
+  const months = [...new Set(recent.map((d) => Number(d.date.slice(5, 7))))].sort((a, b) => a - b);
+  return months.map((m) => MONTH_NAMES[m - 1]);
 }
 
 export function detectFrequency(divs: DividendPayment[], asOf = today()): Frequency | undefined {
@@ -153,6 +167,10 @@ export function computeMetrics({ market, avgCost, toTradingCurrency, asOf = toda
   }
   const freq = detectFrequency(divs, asOf);
   if (freq) m.frequency = { value: freq, source: CALC, asOf, note: "aus Zahlungen der letzten 24 Monate" };
+  const months = exDividendMonths(divs, asOf);
+  if (months) m.exMonths = { value: months, source: Y, asOf, note: "Monate der Ex-Tage" };
+  const last = divs.at(-1);
+  if (last) m.lastDividend = { value: last, source: Y, asOf: last.date };
   const cut = detectDividendCut(divs, freq);
   if (cut !== undefined) m.dividendCut = { value: cut, source: CALC, asOf };
 

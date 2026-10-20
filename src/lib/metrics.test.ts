@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeMetrics, detectDividendCut, detectFrequency, dividendCagr, ttmSum } from "./metrics";
+import { computeMetrics, detectDividendCut, detectFrequency, dividendCagr, exDividendMonths, ttmSum } from "./metrics";
 import { rate } from "./rating";
 import type { MarketData } from "./data/types";
 
@@ -27,6 +27,12 @@ describe("Dividenden", () => {
     const monthly = Array.from({ length: 24 }, (_, i) => ({ date: new Date(Date.UTC(2024, 10 + i, 15)).toISOString().slice(0, 10), amount: 0.27 }));
     expect(detectFrequency(monthly, "2026-10-20")).toBe("monatlich");
     expect(detectFrequency([], "2026-10-20")).toBeUndefined();
+  });
+
+  it("ermittelt die Monate der Ex-Tage", () => {
+    expect(exDividendMonths(quarterlyDivs(2024, 2026, 1, 0), "2026-12-01")).toEqual(["Feb", "Mai", "Aug", "Nov"]);
+    expect(exDividendMonths([{ date: "2025-05-08", amount: 15 }, { date: "2026-05-08", amount: 17 }], "2026-10-20")).toEqual(["Mai"]);
+    expect(exDividendMonths([], "2026-10-20")).toBeUndefined();
   });
 
   it("erkennt Kürzungen gegenüber der Vorjahreszahlung", () => {
