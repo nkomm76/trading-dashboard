@@ -9,7 +9,17 @@ Privates, passwortgeschütztes Dashboard für das eigene Dividendendepot (Next.j
 
 Datenquellen (kostenlos): Yahoo Finance (`yahoo-finance2`), SEC EDGAR (US-Ergänzung), EZB-Referenzkurse.
 
-## Lokal starten
+## Lokal nutzen (Standard)
+
+```bash
+cd ~/KI/code/dividenden-dashboard && npm run app
+```
+
+Danach http://localhost:3000 öffnen. Beenden mit Ctrl-C im Terminal.
+MySQL startet über Homebrew automatisch mit dem Mac. Sind die Daten beim Öffnen des Dashboards älter als 12 Stunden,
+werden sie im Hintergrund aktualisiert. Für lokales http muss in `.env` `COOKIE_SECURE="false"` stehen.
+
+## Entwicklung
 
 ```bash
 brew services start mysql
@@ -23,7 +33,7 @@ Dann http://localhost:3000 öffnen. Die Umgebungsvariablen stehen in `.env` (Vor
 
 Tests: `npm test`
 
-## Deployment auf Hostinger (Cloud Agency)
+## Optional: Deployment auf Hostinger (Cloud Agency)
 
 1. **Datenbank:** im hPanel unter *Datenbanken → MySQL* eine Datenbank samt Benutzer anlegen.
 2. **Node.js-App:** im hPanel *Websites → Node.js-App hinzufügen* → Framework „Next.js“, Node 22, Quelle: Git-Repository oder ZIP-Upload. Build-Befehl `npm run build`, Start-Befehl `npm start`.

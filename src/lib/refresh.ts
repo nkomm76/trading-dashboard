@@ -116,3 +116,19 @@ export async function refreshAll(opts: { outlook: boolean } = { outlook: true })
   });
   return { count: stocks.length, errors };
 }
+
+const STALE_HOURS = 12;
+
+/** Startet eine Aktualisierung, wenn der letzte erfolgreiche Lauf zu alt ist und gerade keiner läuft. */
+export async function refreshIfStale(): Promise<boolean> {
+  const running = await db.refreshLog.findFirst({
+    where: { finishedAt: null, startedAt: { gt: new Date(Date.now() - 15 * 60_000) } },
+  });
+  if (running) return true;
+  const last = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });
+  if (last && Date.now() - last.startedAt.getTime() < STALE_HOURS * 3_600_000) return false;
+  const hasStocks = await db.purchase.count();
+  if (!hasStocks) return false;
+  void refreshAll({ outlook: true }).catch((e) => console.error("Automatische Aktualisierung:", e));
+  return true;
+}

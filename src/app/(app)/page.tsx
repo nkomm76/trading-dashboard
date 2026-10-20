@@ -4,8 +4,11 @@ import { db } from "@/lib/db";
 import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { PositionsTable } from "@/components/positions-table";
 import { RefreshButton } from "@/components/refresh-button";
+import { refreshIfStale } from "@/lib/refresh";
 
 export default async function DashboardPage() {
+  // Kein Cronjob im lokalen Betrieb: beim Öffnen nachladen, wenn die Daten älter als 12 Stunden sind
+  const refreshing = await refreshIfStale();
   const { positions, totals, fxAsOf } = await loadPortfolio();
   const lastRun = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });
 
@@ -36,6 +39,7 @@ export default async function DashboardPage() {
             Letzte Aktualisierung: {lastRun?.finishedAt ? new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(lastRun.finishedAt) : "–"}
             {fxAsOf && ` · Wechselkurse EZB vom ${fmtDate(fxAsOf)}`}
           </p>
+          {refreshing && <p className="text-xs text-light-orange">Daten werden im Hintergrund aktualisiert – Seite in ein bis zwei Minuten neu laden.</p>}
         </div>
         <RefreshButton />
       </div>

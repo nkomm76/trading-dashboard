@@ -19,7 +19,8 @@ export async function createSession() {
   const sealed = await sealData({ loggedIn: true, exp } satisfies Session, { password: password(), ttl: MAX_AGE });
   (await cookies()).set(SESSION_COOKIE, sealed, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Lokal über http://localhost: COOKIE_SECURE=false setzen
+    secure: process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false",
     sameSite: "lax",
     path: "/",
     maxAge: MAX_AGE,
