@@ -67,7 +67,11 @@ export async function refreshStock(stockId: number, rates: Record<string, number
   if (opts.outlook && metrics.latestPeriod && Date.now() - Date.parse(metrics.latestPeriod) < 210 * 86_400_000) {
     const exists = await db.outlook.findUnique({ where: { stockId_period: { stockId, period: metrics.latestPeriod } } });
     if (!exists) {
-      const o = await evaluateOutlook({ name: market.name, symbol: stock.symbol, period: metrics.latestPeriod });
+      // Ein Fehler der KI (z. B. ungültiger Schlüssel) darf die Kennzahlen und die Ampel nicht blockieren
+      const o = await evaluateOutlook({ name: market.name, symbol: stock.symbol, period: metrics.latestPeriod }).catch((e) => {
+        console.error(`KI-Ausblick ${stock.symbol}:`, e instanceof Error ? e.message : e);
+        return undefined;
+      });
       if (o) {
         await db.outlook.create({
           data: { stockId, period: metrics.latestPeriod, status: o.status, dividendCut: o.dividendCut, summary: o.summary, risks: o.risks, sources: o.sources, model: o.model },

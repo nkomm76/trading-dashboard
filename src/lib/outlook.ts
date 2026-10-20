@@ -28,7 +28,7 @@ dividendCut ist true, nur wenn eine Kürzung oder Aussetzung der Dividende angek
 Nutze ausschließlich gefundene Quellen; erfinde nichts. Findest du nichts Belastbares, setze found=false und status=UNKNOWN. Gib jede genutzte Quelle mit URL an.`;
 
 export async function evaluateOutlook(params: { name: string; symbol: string; period: string }): Promise<OutlookResult | undefined> {
-  if (!process.env.ANTHROPIC_API_KEY) return undefined;
+  if (!process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-")) return undefined; // leer oder Platzhalter → KI aus
   const client = new Anthropic();
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [

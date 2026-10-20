@@ -6,7 +6,7 @@ import { RefreshButton } from "@/components/refresh-button";
 export default async function SettingsPage() {
   const t = await getThresholds();
   const logs = await db.refreshLog.findMany({ orderBy: { startedAt: "desc" }, take: 10 });
-  const kiActive = Boolean(process.env.ANTHROPIC_API_KEY);
+  const kiActive = Boolean(process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-"));
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
