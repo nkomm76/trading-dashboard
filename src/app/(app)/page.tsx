@@ -67,21 +67,13 @@ export default async function DashboardPage() {
       )}
 
       {closed.length > 0 && (
-        <section className="card">
-          <h2 className="border-b border-border px-4 py-3 font-semibold">Verkaufte Positionen</h2>
-          <ul className="divide-y divide-border text-sm">
-            {closed.map((p) => (
-              <li key={p.stockId} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <Link href={`/aktie/${p.stockId}`} className="hover:text-accent">
-                  {p.name} <span className="text-xs text-muted">{p.symbol}</span>
-                </Link>
-                <span className={`tabular ${tone(p.realizedEur)}`} title="Realisierter Gewinn nach Gebühren">
-                  {fmtMoney(p.realizedEur)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Link href="/archiv" className="card flex items-center justify-between p-4 text-sm hover:border-accent">
+          <span>
+            <span className="font-medium">Archiv</span>
+            <span className="text-muted"> · {closed.length} komplett verkaufte Position{closed.length === 1 ? "" : "en"}</span>
+          </span>
+          <span className="text-accent">Ansehen →</span>
+        </Link>
       )}
 
       <p className="text-xs text-muted">

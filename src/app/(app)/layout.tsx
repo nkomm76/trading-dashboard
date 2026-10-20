@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </span>
             )}
           </Link>
+          <Link href="/archiv" className="hover:text-accent">Archiv</Link>
           <Link href="/einstellungen" className="hover:text-accent">Einstellungen</Link>
           <form action={logout}>
             <button className="text-muted hover:text-foreground">Abmelden</button>

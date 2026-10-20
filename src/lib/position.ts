@@ -51,3 +51,48 @@ export function computePosition(txs: Tx[]): PositionState {
   s.avgCost = s.quantity > 0 ? s.costTrading / s.quantity : 0;
   return s;
 }
+
+export type ClosedCycle = {
+  firstBuy: string;
+  lastSell: string;
+  boughtQuantity: number;
+  avgBuyPrice: number; // Handelswährung, gewichtet über alle Käufe des Zyklus
+  avgSellPrice: number;
+  costTrading: number; // Summe Kaufbeträge
+  feesEur: number; // alle Kauf- und Verkaufsgebühren des Zyklus
+  realizedTrading: number;
+  txs: Tx[];
+};
+
+/** Teilt Buchungen in Haltezyklen: Ein Zyklus endet, wenn der Bestand auf 0 fällt. Liefert nur abgeschlossene Zyklen. */
+export function closedCycles(txs: Tx[]): ClosedCycle[] {
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || (a.type === b.type ? 0 : a.type === "BUY" ? -1 : 1));
+  const cycles: ClosedCycle[] = [];
+  let current: Tx[] = [];
+  let qty = 0;
+  for (const t of sorted) {
+    current.push(t);
+    qty += t.type === "BUY" ? t.quantity : -t.quantity;
+    if (qty <= EPS && current.some((x) => x.type === "SELL")) {
+      const buys = current.filter((x) => x.type === "BUY");
+      const sells = current.filter((x) => x.type === "SELL");
+      const bought = buys.reduce((a, x) => a + x.quantity, 0);
+      const sold = sells.reduce((a, x) => a + x.quantity, 0);
+      const pos = computePosition(current);
+      cycles.push({
+        firstBuy: buys[0]?.date ?? current[0].date,
+        lastSell: sells[sells.length - 1].date,
+        boughtQuantity: bought,
+        avgBuyPrice: bought ? buys.reduce((a, x) => a + x.price * x.quantity, 0) / bought : 0,
+        avgSellPrice: sold ? sells.reduce((a, x) => a + x.price * x.quantity, 0) / sold : 0,
+        costTrading: buys.reduce((a, x) => a + x.price * x.quantity, 0),
+        feesEur: current.reduce((a, x) => a + x.fees, 0),
+        realizedTrading: pos.realizedTrading,
+        txs: current,
+      });
+      current = [];
+      qty = 0;
+    }
+  }
+  return cycles;
+}
