@@ -12,6 +12,8 @@ export type CheckItem = {
   details: string[];
 };
 
+export type FundamentalRow = { date: string; eps: number | null; fcf: number | null };
+
 export type CheckResult = {
   symbol: string;
   name: string;
@@ -25,6 +27,10 @@ export type CheckResult = {
   schedule?: { frequency?: string; months?: string[]; last?: { date: string; amount: number }; nextExDate?: string };
   fairValue?: FairValue;
   dcf?: DcfResult;
+  /** Dividende je Aktie der letzten 10 abgeschlossenen Kalenderjahre */
+  dividendsByYear: { year: number; total: number }[];
+  /** EPS und Free Cashflow der letzten 3 Jahre */
+  fundamentals: { quarterly: FundamentalRow[]; annual: FundamentalRow[] };
   items: CheckItem[];
   overall: LightColor;
   passed: number;
@@ -333,9 +339,25 @@ export function dcfValue(
   };
 }
 
+/** EPS und FCF der Perioden, die in den letzten 3 Jahren enden. */
+export function recentFundamentals(rows: StatementRow[], asOf: string): FundamentalRow[] {
+  const from = new Date(Date.parse(asOf) - 3 * 365.25 * 86_400_000).toISOString().slice(0, 10);
+  return rows
+    .filter((r) => r.date > from)
+    .map((r) => ({ date: r.date, eps: r.dilutedEPS ?? null, fcf: fcfOf(r) ?? null }))
+    .filter((r) => r.eps !== null || r.fcf !== null);
+}
+
 export function evaluateCheck(
   market: MarketData,
-  opts: { growthRows?: StatementRow[]; toTradingCurrency?: (v: number) => number | undefined; asOf?: string; dcf?: DcfAssumptions } = {},
+  opts: {
+    growthRows?: StatementRow[];
+    /** Quartale für das EPS-/FCF-Diagramm, ggf. um SEC-Perioden erweitert */
+    chartQuarterly?: StatementRow[];
+    toTradingCurrency?: (v: number) => number | undefined;
+    asOf?: string;
+    dcf?: DcfAssumptions;
+  } = {},
 ): CheckResult {
   const asOf = opts.asOf ?? new Date().toISOString().slice(0, 10);
   const items = [
@@ -346,6 +368,7 @@ export function evaluateCheck(
   const rated = items.filter((i) => i.light !== "GREY");
   const overall = rated.length ? rated.reduce<LightColor>((w, i) => (ORDER[i.light] > ORDER[w] ? i.light : w), "GREEN") : "GREY";
   const metrics = computeMetrics({ market, asOf });
+  const year = Number(asOf.slice(0, 4));
   const ttm = metrics.dividendYield?.value;
 
   return {
@@ -368,6 +391,10 @@ export function evaluateCheck(
       : undefined,
     fairValue: fairValueByYield(market.dividends, market.monthlyCloses, market.price?.value, asOf),
     dcf: dcfValue(market, opts.dcf, opts.toTradingCurrency),
+    dividendsByYear: [...annualTotals(market.dividends)]
+      .filter(([y]) => y < year && y >= year - 10)
+      .map(([y, total]) => ({ year: y, total })),
+    fundamentals: { quarterly: recentFundamentals(opts.chartQuarterly ?? market.quarterly, asOf), annual: recentFundamentals(market.annual, asOf) },
     items,
     overall,
     passed: items.filter((i) => i.light === "GREEN").length,

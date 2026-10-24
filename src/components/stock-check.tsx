@@ -4,7 +4,7 @@ import Link from "next/link";
 import { startTransition, useActionState, useRef } from "react";
 import { checkStock } from "@/app/actions";
 import { fmtBig, fmtDate, fmtMoney, fmtPct } from "@/lib/format";
-import { PriceChart, SeasonalityChart } from "./charts";
+import { DividendChart, EpsFcfChart, PriceChart, SeasonalityChart } from "./charts";
 import { Light } from "./light";
 
 const OVERALL: Record<string, string> = {
@@ -136,6 +136,23 @@ export function StockCheck() {
               ]}
             />
           </section>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="card p-5">
+              <h3 className="mb-3 text-sm font-semibold">Dividende je Aktie pro Jahr ({r.currency})</h3>
+              {r.dividendsByYear.length ? (
+                <DividendChart data={r.dividendsByYear} currentYear={new Date().getFullYear()} />
+              ) : (
+                <p className="text-sm text-muted">Keine Dividendenhistorie verfügbar.</p>
+              )}
+              <p className="mt-1 text-xs text-muted">Letzte 10 abgeschlossene Jahre, nach Ex-Tag. Quelle: Yahoo Finance.</p>
+            </section>
+            <section className="card p-5">
+              <h3 className="mb-3 text-sm font-semibold">EPS und Free Cashflow (3 Jahre)</h3>
+              <EpsFcfChart key={r.symbol} quarterly={r.fundamentals.quarterly} annual={r.fundamentals.annual} currency={r.financialCurrency ?? r.currency} />
+              <p className="mt-1 text-xs text-muted">EPS je Aktie, Free Cashflow gesamt (rechte Achse). Quelle: Yahoo Finance{r.currency === "USD" ? ", ergänzt um SEC" : ""}.</p>
+            </section>
+          </div>
 
           <section className="card p-5">
             <h3 className="mb-3 text-sm font-semibold">Saisonalität</h3>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDividends, checkGrowth, checkPayout, dcfPerShare, dcfValue, expectedYield, fairValueByYield } from "./check";
+import { checkDividends, checkGrowth, checkPayout, dcfPerShare, dcfValue, expectedYield, fairValueByYield, recentFundamentals } from "./check";
 import type { MarketData } from "./data/types";
 
 const yearly = (from: number, amounts: number[]) => amounts.map((a, i) => ({ date: `${from + i}-05-10`, amount: a }));
@@ -159,5 +159,20 @@ describe("DCF", () => {
     expect("unavailable" in dcfValue(mk([1, 2]), a)).toBe(true);
     expect("unavailable" in dcfValue(mk([-10, -20, 5]), a)).toBe(true);
     expect("unavailable" in dcfValue(mk([100, 110, 121], { sector: "Financial Services" }), a)).toBe(true);
+  });
+});
+
+describe("recentFundamentals", () => {
+  it("nur Perioden der letzten 3 Jahre, FCF aus Cashflow minus Investitionen", () => {
+    const rows = [
+      { date: "2022-12-31", dilutedEPS: 1 },
+      { date: "2023-12-31", dilutedEPS: 2, operatingCashFlow: 10, capitalExpenditure: -4 },
+      { date: "2025-12-31", dilutedEPS: 3, freeCashFlow: 7 },
+      { date: "2026-06-30" },
+    ];
+    expect(recentFundamentals(rows, "2026-10-24")).toEqual([
+      { date: "2023-12-31", eps: 2, fcf: 6 },
+      { date: "2025-12-31", eps: 3, fcf: 7 },
+    ]);
   });
 });

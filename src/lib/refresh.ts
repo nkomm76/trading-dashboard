@@ -14,16 +14,21 @@ import { toTx } from "./portfolio";
 const today = () => new Date(new Date().toISOString().slice(0, 10));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Gleiche Berichtsperiode, auch wenn die Stichtage leicht abweichen (z. B. 28.09. bei SEC, 30.09. bei Yahoo). */
+export const samePeriod = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 7 * 86_400_000;
+
 /** Füllt Lücken in Yahoo-Quartalsdaten mit SEC-Werten (nur US). */
-function mergeRows(base: StatementRow[], extra: StatementRow[]): StatementRow[] {
-  const map = new Map(base.map((r) => [r.date, { ...r }]));
+export function mergeRows(base: StatementRow[], extra: StatementRow[]): StatementRow[] {
+  const rows = base.map((r) => ({ ...r }));
   for (const e of extra) {
-    const r = map.get(e.date);
+    const r = rows.find((x) => samePeriod(x.date, e.date));
     if (!r) continue; // nur bestehende Perioden ergänzen, keine neuen anlegen
     r.dilutedEPS ??= e.dilutedEPS;
     r.stockholdersEquity ??= e.stockholdersEquity;
+    r.operatingCashFlow ??= e.operatingCashFlow;
+    r.capitalExpenditure ??= e.capitalExpenditure;
   }
-  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function buildSeries(market: MarketData) {

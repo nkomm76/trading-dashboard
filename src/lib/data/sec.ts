@@ -1,4 +1,5 @@
 import "server-only";
+import { daysBetween, quarterlyFromYtd, type Fact } from "./sec-quarters";
 import type { StatementRow } from "./types";
 
 // SEC EDGAR verlangt einen User-Agent mit Kontaktangabe.
@@ -19,9 +20,7 @@ export async function lookupCik(ticker: string): Promise<string | undefined> {
   return cik;
 }
 
-type Fact = { start?: string; end: string; val: number; form: string; fp?: string };
 
-const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86_400_000;
 
 // Ergänzt US-Quartalszahlen aus den offiziellen 10-Q/10-K-Daten, wo Yahoo Lücken hat.
 export async function fetchSecQuarterly(cik: string): Promise<StatementRow[]> {
@@ -44,6 +43,9 @@ export async function fetchSecQuarterly(cik: string): Promise<StatementRow[]> {
   for (const f of facts("StockholdersEquity", "USD")) {
     if (f.form === "10-Q" || f.form === "10-K") row(f.end).stockholdersEquity = f.val;
   }
+  // Cashflows stehen in 10-Q/10-K kumuliert ab Geschäftsjahresbeginn: Quartal = Stand − Vorstand
+  for (const [k, end] of quarterlyFromYtd(facts("NetCashProvidedByUsedInOperatingActivities", "USD"))) row(k).operatingCashFlow = end;
+  for (const [k, end] of quarterlyFromYtd(facts("PaymentsToAcquirePropertyPlantAndEquipment", "USD"))) row(k).capitalExpenditure = -end;
 
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 5);
