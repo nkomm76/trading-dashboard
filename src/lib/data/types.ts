@@ -21,6 +21,7 @@ export type StatementRow = {
   stockholdersEquity?: number;
   cashDividendsPaid?: number; // negativ
   totalRevenue?: number;
+  dilutedAverageShares?: number;
 };
 
 export type MarketData = {
@@ -32,6 +33,7 @@ export type MarketData = {
   sector?: string;
   price?: Sourced;
   epsTTM?: Sourced;
+  sharesOutstanding?: number;
   nextExDividend?: Sourced<string>;
   dividends: DividendPayment[];
   /** Monatsschlusskurse (split-bereinigt) für Bewertungen über mehrere Jahre */

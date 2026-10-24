@@ -5,6 +5,12 @@ export type Reason = { criterion: string; light: Exclude<LightColor, "GREY">; te
 
 type Band = { green: number; orange: number }; // Grenze grün|orange und orange|rot
 
+export type DcfAssumptions = {
+  discountRate: number; // geforderte Rendite (Eigenkapitalkosten)
+  terminalGrowth: number; // ewiges Wachstum nach Jahr 10
+  maxGrowth: number; // Obergrenze für das Wachstum der ersten 5 Jahre
+};
+
 export type Thresholds = {
   payoutEps: Band; // in Anteil (0.6 = 60 %)
   payoutFcf: Band;
@@ -12,6 +18,8 @@ export type Thresholds = {
   debtChangeYoY: Band;
   dividendCagr5: Band; // Untergrenzen: > green → grün, ≥ orange → orange
   minCriteria: number;
+  /** Annahmen für den fairen Wert nach DCF (Aktien Check) */
+  dcf: DcfAssumptions;
   // Abweichende Schwellen für Branchen, in denen EPS-Payout wenig aussagt
   sectors: Record<string, { payoutEps?: Band; payoutFcf?: Band; debtToEquity?: Band; useFcfPayoutOnly?: boolean }>;
 };
@@ -23,6 +31,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   debtChangeYoY: { green: 0.1, orange: 0.25 },
   dividendCagr5: { green: 0.05, orange: 0 },
   minCriteria: 3,
+  dcf: { discountRate: 0.08, terminalGrowth: 0.02, maxGrowth: 0.1 },
   sectors: {
     "Real Estate": { payoutFcf: { green: 0.8, orange: 1.0 }, debtToEquity: { green: 1.5, orange: 2.5 }, useFcfPayoutOnly: true },
     Utilities: { payoutEps: { green: 0.75, orange: 0.9 }, debtToEquity: { green: 1.5, orange: 2.5 } },

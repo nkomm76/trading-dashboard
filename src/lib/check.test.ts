@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDividends, checkGrowth, checkPayout, expectedYield, fairValueByYield } from "./check";
+import { checkDividends, checkGrowth, checkPayout, dcfPerShare, dcfValue, expectedYield, fairValueByYield } from "./check";
 import type { MarketData } from "./data/types";
 
 const yearly = (from: number, amounts: number[]) => amounts.map((a, i) => ({ date: `${from + i}-05-10`, amount: a }));
@@ -108,5 +108,56 @@ describe("fairValueByYield", () => {
     expect(fairValueByYield(divs.filter((d) => d.date >= "2024-06"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
     expect(fairValueByYield(divs.filter((d) => d.date < "2024"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
     expect(fairValueByYield(divs, undefined, 50, "2026-10-01")).toBeUndefined();
+  });
+});
+
+describe("DCF", () => {
+  const a = { discountRate: 0.08, terminalGrowth: 0.02, maxGrowth: 0.1 };
+
+  it("ohne Wachstum entspricht der Wert fast einer ewigen Rente", () => {
+    // g = 0 in Jahr 1–5, Jahre 6–10 steigen auf 2 %: liegt zwischen 100/0,08 und 100/(0,08−0,02)
+    const v = dcfPerShare(100, 0, { ...a, terminalGrowth: 0 }, 1);
+    expect(v).toBeCloseTo(1250, 0);
+    const w = dcfPerShare(100, 0, a, 1);
+    expect(w).toBeGreaterThan(1250);
+    expect(w).toBeLessThan(100 / 0.06);
+  });
+
+  const rows = (fcfs: number[]) => fcfs.map((f, i) => ({ date: `${2020 + i}-12-31`, freeCashFlow: f, totalRevenue: 1000 + i * 100 }));
+  const mk = (fcfs: number[], over: Partial<MarketData> = {}) =>
+    market({ annual: rows(fcfs), sharesOutstanding: 10, price: { value: 100, source: "t", asOf: "2026-10-01" }, ...over });
+
+  it("Basis = Ø der letzten 3 Jahre, Wachstum aus FCF-CAGR", () => {
+    const r = dcfValue(mk([100, 110, 121, 133.1, 146.41]), a);
+    if ("unavailable" in r) throw new Error(r.unavailable);
+    expect(r.baseFcf).toBeCloseTo((121 + 133.1 + 146.41) / 3);
+    expect(r.growth).toBeCloseTo(0.1, 2);
+    expect(r.value).toBeCloseTo(dcfPerShare(r.baseFcf, r.growth, a, 10));
+    expect(r.low).toBeLessThan(r.value);
+    expect(r.high).toBeGreaterThan(r.value);
+  });
+
+  it("rechnet das Wachstum je Aktie (Verwässerung durch neue Aktien)", () => {
+    // FCF verdoppelt sich, die Aktienzahl auch → kein Wachstum je Aktie
+    const annual = [100, 130, 160, 200].map((f, i) => ({ date: `${2021 + i}-12-31`, freeCashFlow: f, dilutedAverageShares: [10, 13, 16, 20][i] }));
+    const r = dcfValue(market({ annual, sharesOutstanding: 20 }), a);
+    if ("unavailable" in r) throw new Error(r.unavailable);
+    expect(r.growth).toBeCloseTo(0);
+    expect(r.growthBasis).toContain("je Aktie");
+  });
+
+  it("begrenzt Wachstum und weicht bei negativem Start-FCF auf den Umsatz aus", () => {
+    const fast = dcfValue(mk([50, 100, 200, 400, 800]), a);
+    expect("unavailable" in fast ? 0 : fast.growth).toBe(0.1);
+    const neg = dcfValue(mk([-50, 100, 120, 130, 140]), a);
+    if ("unavailable" in neg) throw new Error(neg.unavailable);
+    expect(neg.growthBasis).toContain("Umsatz");
+  });
+
+  it("kein Wert ohne Aktienzahl, bei zu kurzer Historie oder negativem FCF", () => {
+    expect("unavailable" in dcfValue(mk([1, 2, 3], { sharesOutstanding: undefined }), a)).toBe(true);
+    expect("unavailable" in dcfValue(mk([1, 2]), a)).toBe(true);
+    expect("unavailable" in dcfValue(mk([-10, -20, 5]), a)).toBe(true);
+    expect("unavailable" in dcfValue(mk([100, 110, 121], { sector: "Financial Services" }), a)).toBe(true);
   });
 });

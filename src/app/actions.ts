@@ -154,11 +154,14 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
     debtChangeYoY: { green: n("debtChangeYoY.green"), orange: n("debtChangeYoY.orange") },
     dividendCagr5: { green: n("dividendCagr5.green"), orange: n("dividendCagr5.orange") },
     minCriteria: Number(formData.get("minCriteria") ?? 3),
+    dcf: { discountRate: n("dcf.discountRate"), terminalGrowth: n("dcf.terminalGrowth"), maxGrowth: n("dcf.maxGrowth") },
   };
   const bands = [t.payoutEps, t.payoutFcf, t.debtToEquity, t.debtChangeYoY];
   if ([...bands, t.dividendCagr5].some((b) => !Number.isFinite(b.green) || !Number.isFinite(b.orange)))
     return { error: "Bitte alle Felder mit Zahlen füllen." };
   if (bands.some((b) => b.green > b.orange)) return { error: "Die Grün-Grenze muss unter der Rot-Grenze liegen." };
+  if (Object.values(t.dcf).some((v) => !Number.isFinite(v) || v < 0)) return { error: "Bitte alle DCF-Annahmen als Prozentwerte eingeben." };
+  if (t.dcf.discountRate <= t.dcf.terminalGrowth) return { error: "Der Abzinsungssatz muss über dem ewigen Wachstum liegen." };
   await saveThresholds(t);
   return { ok: "Gespeichert. Die Ampeln werden beim nächsten Aktualisieren neu berechnet." };
 }

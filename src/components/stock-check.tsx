@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { startTransition, useActionState, useRef } from "react";
 import { checkStock } from "@/app/actions";
-import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
+import { fmtBig, fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { PriceChart, SeasonalityChart } from "./charts";
 import { Light } from "./light";
 
@@ -13,6 +13,19 @@ const OVERALL: Record<string, string> = {
   RED: "Mindestens ein Warnsignal",
   GREY: "Zu wenig Daten für eine Bewertung",
 };
+
+function FairHeadline({ value, deviation, currency }: { value: number; deviation?: number; currency: string }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+      <span className="tabular text-2xl font-semibold">{fmtMoney(value, currency)}</span>
+      {deviation !== undefined && (
+        <span className={`text-sm font-medium ${deviation <= 0 ? "text-light-green" : "text-light-orange"}`}>
+          Kurs {fmtPct(Math.abs(deviation))} {deviation <= 0 ? "darunter" : "darüber"}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function StockCheck() {
   const [state, action, pending] = useActionState(checkStock, undefined);
@@ -113,7 +126,15 @@ export function StockCheck() {
 
           <section className="card p-5">
             <h3 className="mb-3 text-sm font-semibold">Kursverlauf</h3>
-            <PriceChart key={r.symbol} symbol={r.symbol} currency={r.currency} fairValue={r.fairValue?.value} />
+            <PriceChart
+              key={r.symbol}
+              symbol={r.symbol}
+              currency={r.currency}
+              fairLines={[
+                ...(r.fairValue ? [{ label: "Dividende", value: r.fairValue.value, color: "var(--accent)" }] : []),
+                ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)" }] : []),
+              ]}
+            />
           </section>
 
           <section className="card p-5">
@@ -122,40 +143,74 @@ export function StockCheck() {
           </section>
 
           <section className="card p-5">
-            <h3 className="text-sm font-semibold">Fairer Wert (Rendite-Mittelwert)</h3>
-            {r.fairValue ? (
-              <>
-                <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                  <span className="tabular text-2xl font-semibold">{fmtMoney(r.fairValue.value, r.currency)}</span>
-                  {r.fairValue.deviation !== undefined && (
-                    <span className={`text-sm font-medium ${r.fairValue.deviation <= 0 ? "text-light-green" : "text-light-orange"}`}>
-                      Kurs {fmtPct(Math.abs(r.fairValue.deviation))} {r.fairValue.deviation <= 0 ? "unter" : "über"} dem fairen Wert
-                    </span>
-                  )}
-                </div>
-                <ul className="tabular mt-3 space-y-0.5 text-xs text-muted">
-                  <li>
-                    Formel: erwartete Jahresdividende {fmtMoney(r.fairValue.dividend, r.currency)} ÷ Ø-Dividendenrendite {fmtPct(r.fairValue.avgYield, 2)}
-                  </li>
-                  <li>Jahresdividende: {r.fairValue.dividendBasis}</li>
-                  <li>
-                    Ø-Rendite aus {r.fairValue.months} Monatsschlusskursen {fmtDate(r.fairValue.from)} – {fmtDate(r.fairValue.to)} (Spanne {fmtPct(r.fairValue.minYield, 2)} bis{" "}
-                    {fmtPct(r.fairValue.maxYield, 2)})
-                  </li>
-                  {r.fairValue.notes.map((n) => (
-                    <li key={n} className="text-light-orange">
-                      Hinweis: {n}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-3 text-xs text-muted">
-                  Annahme: Die Aktie kehrt zu ihrer üblichen Dividendenrendite zurück. Hohe Rendite gegenüber dem Durchschnitt deutet auf einen günstigen Kurs hin – oder auf
-                  ein Problem, das der Markt einpreist.
+            <h3 className="text-sm font-semibold">Fairer Wert</h3>
+            <div className="mt-3 grid gap-6 sm:grid-cols-2">
+              <div>
+                <p className="flex items-center gap-2 text-xs text-muted">
+                  <span className="inline-block w-4 border-t-2 border-dashed border-accent" /> Nach Dividendenrendite (Ø 5 Jahre)
                 </p>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-muted">Nicht berechenbar: Dafür braucht es eine regelmäßige, aktuelle Dividende und mindestens 3 Jahre Kurs- und Dividendenhistorie.</p>
-            )}
+                {r.fairValue ? (
+                  <>
+                    <FairHeadline value={r.fairValue.value} deviation={r.fairValue.deviation} currency={r.currency} />
+                    <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
+                      <li>
+                        Jahresdividende {fmtMoney(r.fairValue.dividend, r.currency)} ÷ Ø-Rendite {fmtPct(r.fairValue.avgYield, 2)}
+                      </li>
+                      <li>Jahresdividende: {r.fairValue.dividendBasis}</li>
+                      <li>
+                        Ø aus {r.fairValue.months} Monatswerten {fmtDate(r.fairValue.from)} – {fmtDate(r.fairValue.to)}, Spanne {fmtPct(r.fairValue.minYield, 2)} bis{" "}
+                        {fmtPct(r.fairValue.maxYield, 2)}
+                      </li>
+                      {r.fairValue.notes.map((n) => (
+                        <li key={n} className="text-light-orange">
+                          Hinweis: {n}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-muted">Nicht berechenbar: braucht eine regelmäßige, aktuelle Dividende und mindestens 3 Jahre Historie.</p>
+                )}
+              </div>
+              <div>
+                <p className="flex items-center gap-2 text-xs text-muted">
+                  <span className="inline-block w-4 border-t-2 border-dashed border-light-orange" /> Nach DCF (Free Cashflow)
+                </p>
+                {r.dcf && !("unavailable" in r.dcf) ? (
+                  <>
+                    <FairHeadline value={r.dcf.value} deviation={r.dcf.deviation} currency={r.currency} />
+                    <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
+                      <li>
+                        Spanne {fmtMoney(r.dcf.low, r.currency)} – {fmtMoney(r.dcf.high, r.currency)} (Abzinsung ±1 Prozentpunkt)
+                      </li>
+                      <li>
+                        Basis: Ø-FCF {r.dcf.baseYears}: {fmtBig(r.dcf.baseFcf, r.financialCurrency ?? r.currency)}, {fmtBig(r.dcf.shares)} Aktien
+                      </li>
+                      <li>
+                        Wachstum Jahr 1–5: {fmtPct(r.dcf.growth)} p. a. ({r.dcf.growthBasis}), danach bis Jahr 10 auf {fmtPct(r.dcf.assumptions.terminalGrowth)}
+                      </li>
+                      <li>
+                        Abzinsung {fmtPct(r.dcf.assumptions.discountRate)}, ewiges Wachstum {fmtPct(r.dcf.assumptions.terminalGrowth)} –{" "}
+                        <Link href="/einstellungen" className="text-accent">
+                          anpassen
+                        </Link>
+                      </li>
+                      {r.dcf.notes.map((n) => (
+                        <li key={n} className="text-light-orange">
+                          Hinweis: {n}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-muted">Nicht berechenbar: {r.dcf && "unavailable" in r.dcf ? r.dcf.unavailable : "keine Daten"}.</p>
+                )}
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-muted">
+              Beide Werte sind Modelle mit Annahmen, keine Anlageberatung. Die Dividendenmethode unterstellt, dass die Aktie zu ihrer üblichen Rendite zurückkehrt; der DCF
+              reagiert stark auf Abzinsung und Wachstum.
+            </p>
           </section>
 
           <section className="card divide-y divide-border">

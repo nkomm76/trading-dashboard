@@ -20,7 +20,7 @@ export default async function SettingsPage() {
         <div className="card p-5">
           <h2 className="mb-1 font-semibold">Daten aktualisieren</h2>
           <p className="mb-4 text-sm text-muted">
-            Läuft automatisch jede Nacht per Cronjob. KI-Ausblick: {kiActive ? "aktiv" : "inaktiv (ANTHROPIC_API_KEY fehlt)"}.
+            Läuft automatisch beim Öffnen der Übersicht, wenn die Daten älter als 12 Stunden sind. KI-Ausblick: {kiActive ? "aktiv" : "inaktiv (ANTHROPIC_API_KEY fehlt)"}.
           </p>
           <div className="flex flex-wrap gap-3">
             <RefreshButton />

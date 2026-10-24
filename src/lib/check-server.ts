@@ -3,7 +3,7 @@ import { evaluateCheck, type CheckResult } from "./check";
 import { convert, fetchEcbRates } from "./data/fx";
 import { fetchSecAnnual, lookupCik } from "./data/sec";
 import { fetchMarketData, searchStocks, type SearchHit } from "./data/yahoo";
-import { getFxRates } from "./settings";
+import { getFxRates, getThresholds } from "./settings";
 
 const ISIN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
@@ -47,6 +47,7 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
   const result = evaluateCheck(market, {
     growthRows,
+    dcf: (await getThresholds()).dcf,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
   return { result, listings, isin: ISIN.test(q) ? q : undefined };

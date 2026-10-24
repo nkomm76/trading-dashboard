@@ -49,6 +49,24 @@ export function SettingsForm({ t }: { t: Thresholds }) {
         Mindestanzahl Kriterien für eine Farbe
         <input className="input w-16" name="minCriteria" type="number" min={1} max={6} defaultValue={t.minCriteria} />
       </label>
+      <fieldset className="space-y-2 border-t border-border pt-4">
+        <legend className="text-sm font-medium">Annahmen für den fairen Wert nach DCF (Aktien Check)</legend>
+        {(
+          [
+            ["discountRate", "Abzinsungssatz (geforderte Rendite)", t.dcf.discountRate],
+            ["terminalGrowth", "Ewiges Wachstum nach Jahr 10", t.dcf.terminalGrowth],
+            ["maxGrowth", "Höchstes Wachstum in Jahr 1–5", t.dcf.maxGrowth],
+          ] as const
+        ).map(([k, label, v]) => (
+          <label key={k} className="flex items-center justify-between gap-3 text-sm sm:justify-start">
+            <span className="sm:w-72">{label}</span>
+            <span className="flex items-center gap-1">
+              <input className="input w-20" name={`dcf.${k}`} defaultValue={p(v)} inputMode="decimal" />
+              <span className="text-muted">%</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
       {state?.error && <p className="text-sm text-light-red">{state.error}</p>}
       {state?.ok && <p className="text-sm text-light-green">{state.ok}</p>}
       <button className="btn" disabled={pending}>Speichern</button>

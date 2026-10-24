@@ -21,6 +21,7 @@ function toRows(rows: Record<string, unknown>[]): StatementRow[] {
       stockholdersEquity: num(r.stockholdersEquity),
       cashDividendsPaid: num(r.cashDividendsPaid),
       totalRevenue: num(r.totalRevenue),
+      dilutedAverageShares: num(r.dilutedAverageShares),
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -74,6 +75,7 @@ export async function fetchMarketData(symbol: string): Promise<MarketData> {
       typeof quote.epsTrailingTwelveMonths === "number"
         ? { value: quote.epsTrailingTwelveMonths, source: SOURCE, asOf: day(now), period: "TTM" }
         : undefined,
+    sharesOutstanding: typeof quote.sharesOutstanding === "number" && quote.sharesOutstanding > 0 ? quote.sharesOutstanding : undefined,
     nextExDividend:
       exDiv && new Date(exDiv) > now ? { value: day(exDiv), source: SOURCE, asOf: day(now) } : undefined,
     dividends: (chart?.events?.dividends ?? [])

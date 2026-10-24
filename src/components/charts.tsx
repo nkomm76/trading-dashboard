@@ -108,7 +108,9 @@ const RANGE_LABELS: [Range, string][] = [
 ];
 type PricePoint = { time: number; close: number };
 
-export function PriceChart({ symbol, currency, fairValue }: { symbol: string; currency: string; fairValue?: number }) {
+export type FairLine = { label: string; value: number; color: string };
+
+export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: string; currency: string; fairLines?: FairLine[] }) {
   const [range, setRange] = useState<Range>("1y");
   const [data, setData] = useState<{ key: string; points: PricePoint[] }>();
   // Zoom: per Maus aufgezogener Ausschnitt; feinere Kurse werden nachgeladen
@@ -181,11 +183,14 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
   const fmtFull = (t: unknown) =>
     typeof t === "number" ? new Date(t).toLocaleString("de-DE", intraday ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
   const money = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ` ${currency}` : "–");
-  // Fairen Wert nur einblenden, wenn er nahe am Kursbereich liegt – sonst würde die Achse den Verlauf plattdrücken
+  // Faire Werte einblenden und die Achse erweitern; nur extreme Ausreißer weglassen, die den Verlauf plattdrücken würden
   const closes = points?.map((p) => p.close) ?? [];
   const lo = Math.min(...closes);
   const hi = Math.max(...closes);
-  const showFair = fairValue !== undefined && closes.length > 0 && fairValue > lo * 0.85 && fairValue < hi * 1.15;
+  const shown = closes.length ? fairLines.filter((f) => f.value > lo * 0.5 && f.value < hi * 2) : [];
+  const hidden = closes.length ? fairLines.filter((f) => !shown.includes(f)) : [];
+  const yLo = Math.min(lo, ...shown.map((f) => f.value));
+  const yHi = Math.max(hi, ...shown.map((f) => f.value));
 
   return (
     <div>
@@ -242,16 +247,22 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={fmtTick} tick={{ fontSize: 11, fill: "var(--muted)" }} minTickGap={40} />
               <YAxis
-                domain={showFair ? [Math.min(lo, fairValue!) * 0.97, Math.max(hi, fairValue!) * 1.03] : ["auto", "auto"]}
+                domain={shown.length ? [yLo * 0.97, yHi * 1.03] : ["auto", "auto"]}
                 tick={{ fontSize: 12, fill: "var(--muted)" }}
                 tickFormatter={nf(2)}
                 width={52}
               />
               <Tooltip contentStyle={tooltipStyle} labelFormatter={fmtFull} formatter={(v) => [money(v), "Kurs"]} />
               <Area type="monotone" dataKey="close" stroke={color} strokeWidth={2} fill="url(#priceFill)" dot={false} isAnimationActive={false} />
-              {showFair && (
-                <ReferenceLine y={fairValue} stroke="var(--accent)" strokeDasharray="5 4" label={{ value: "fairer Wert", position: "insideTopLeft", fontSize: 11, fill: "var(--accent)" }} />
-              )}
+              {shown.map((f, i) => (
+                <ReferenceLine
+                  key={f.label}
+                  y={f.value}
+                  stroke={f.color}
+                  strokeDasharray="5 4"
+                  label={{ value: f.label, position: i % 2 ? "insideBottomRight" : "insideTopLeft", fontSize: 11, fill: f.color }}
+                />
+              ))}
               {drag?.start !== undefined && drag.end !== undefined && <ReferenceArea x1={drag.start} x2={drag.end} fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.4} />}
             </AreaChart>
           </ResponsiveContainer>
@@ -259,7 +270,7 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
       </div>
       <p className="mt-1 text-xs text-muted">
         Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert" : ""}.
-        {fairValue !== undefined && closes.length > 0 && !showFair && " Fairer Wert liegt außerhalb des dargestellten Kursbereichs."}
+        {hidden.length > 0 && ` ${hidden.map((f) => f.label).join(" und ")} außerhalb des dargestellten Kursbereichs.`}
       </p>
     </div>
   );

@@ -1,6 +1,6 @@
 import type { DividendPayment, MarketData, PricePoint, StatementRow } from "./data/types";
-import { annualTotals, computeMetrics, detectDividendCut, detectFrequency } from "./metrics";
-import type { LightColor } from "./rating";
+import { annualTotals, computeMetrics, detectDividendCut, detectFrequency, fcfOf } from "./metrics";
+import { DEFAULT_THRESHOLDS, type DcfAssumptions, type LightColor } from "./rating";
 
 // Schnellbewertung vor dem Kauf. Jede Prüfung ist GREY, wenn die Datenbasis fehlt – nichts wird geschätzt.
 
@@ -16,6 +16,7 @@ export type CheckResult = {
   symbol: string;
   name: string;
   currency: string;
+  financialCurrency?: string;
   exchange?: string;
   sector?: string;
   price?: { value: number; asOf: string };
@@ -23,6 +24,7 @@ export type CheckResult = {
   trailingYield?: number;
   schedule?: { frequency?: string; months?: string[]; last?: { date: string; amount: number }; nextExDate?: string };
   fairValue?: FairValue;
+  dcf?: DcfResult;
   items: CheckItem[];
   overall: LightColor;
   passed: number;
@@ -228,7 +230,113 @@ export function fairValueByYield(
   };
 }
 
-export function evaluateCheck(market: MarketData, opts: { growthRows?: StatementRow[]; toTradingCurrency?: (v: number) => number | undefined; asOf?: string } = {}): CheckResult {
+export type DcfValue = {
+  value: number; // je Aktie in Handelswährung
+  low: number; // bei Abzinsungssatz + 1 Prozentpunkt
+  high: number; // bei Abzinsungssatz − 1 Prozentpunkt
+  baseFcf: number; // Ø Free Cashflow der letzten Jahre (Bilanzwährung)
+  baseYears: string;
+  growth: number;
+  growthBasis: string;
+  assumptions: DcfAssumptions;
+  shares: number;
+  deviation?: number;
+  notes: string[];
+};
+export type DcfResult = DcfValue | { unavailable: string };
+
+const fy = (d: string) => (d.slice(5, 7) === "01" && Number(d.slice(8, 10)) <= 10 ? Number(d.slice(0, 4)) - 1 : Number(d.slice(0, 4)));
+const cagr = (first: number, last: number, years: number) => (first > 0 && last > 0 && years > 0 ? Math.pow(last / first, 1 / years) - 1 : undefined);
+
+/** Barwert je Aktie: 5 Jahre Wachstum g, Jahre 6–10 linear auf das ewige Wachstum, danach Endwert (Gordon). */
+export function dcfPerShare(baseFcf: number, growth: number, a: DcfAssumptions, shares: number, rate = a.discountRate): number {
+  let fcf = baseFcf;
+  let pv = 0;
+  for (let y = 1; y <= 10; y++) {
+    const g = y <= 5 ? growth : growth + ((a.terminalGrowth - growth) * (y - 5)) / 5;
+    fcf *= 1 + g;
+    pv += fcf / Math.pow(1 + rate, y);
+  }
+  const terminal = (fcf * (1 + a.terminalGrowth)) / (rate - a.terminalGrowth);
+  pv += terminal / Math.pow(1 + rate, 10);
+  return pv / shares;
+}
+
+/**
+ * Fairer Wert nach DCF auf Basis des Free Cashflows (nach Zinsen, daher mit den Eigenkapitalkosten abgezinst).
+ * Basis: Ø-FCF der letzten 3 Geschäftsjahre; Wachstum: historisches FCF-Wachstum, ersatzweise Umsatzwachstum, begrenzt.
+ */
+export function dcfValue(
+  market: MarketData,
+  a: DcfAssumptions = DEFAULT_THRESHOLDS.dcf,
+  toTradingCurrency?: (v: number) => number | undefined,
+): DcfResult {
+  const rows = market.annual.map((r) => ({ date: r.date, fcf: fcfOf(r), shares: r.dilutedAverageShares })).filter((r) => r.fcf !== undefined) as {
+    date: string;
+    fcf: number;
+    shares?: number;
+  }[];
+  // Bei Banken und Versicherungen enthält der operative Cashflow Kundengelder (Einlagen, Prämien) – kein freier Überschuss
+  if (market.sector === "Financial Services") return { unavailable: "Für Banken und Versicherungen nicht sinnvoll, ihr Cashflow enthält Kundengelder" };
+  if (!market.sharesOutstanding) return { unavailable: "Anzahl der Aktien nicht verfügbar" };
+  if (rows.length < 3) return { unavailable: "Weniger als 3 Geschäftsjahre mit Free Cashflow in der Quelle" };
+  if (a.discountRate <= a.terminalGrowth) return { unavailable: "Abzinsungssatz muss über dem ewigen Wachstum liegen" };
+
+  const last3 = rows.slice(-3);
+  const baseFcf = last3.reduce((s, r) => s + r.fcf, 0) / 3;
+  if (baseFcf <= 0) return { unavailable: "Free Cashflow im Schnitt der letzten 3 Jahre nicht positiv" };
+
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const years = (Date.parse(last.date) - Date.parse(first.date)) / (365.25 * 86_400_000);
+  const notes: string[] = [];
+  // Wachstum je Aktie: Neue Aktien (z. B. für Zukäufe) verteilen den Cashflow auf mehr Anteile
+  const perShare = first.shares && last.shares;
+  const dilution = perShare ? last.shares! / first.shares! : 1;
+  let raw = cagr(first.fcf, last.fcf / dilution, years);
+  let basis = `Free Cashflow${perShare ? " je Aktie" : ""} ${fy(first.date)}–${fy(last.date)}`;
+  if (raw === undefined) {
+    const rev = market.annual.filter((r) => typeof r.totalRevenue === "number");
+    const rf = rev[0];
+    const rl = rev[rev.length - 1];
+    const revDilution = rf?.dilutedAverageShares && rl?.dilutedAverageShares ? rl.dilutedAverageShares / rf.dilutedAverageShares : 1;
+    raw = rf && rl ? cagr(rf.totalRevenue!, rl.totalRevenue! / revDilution, (Date.parse(rl.date) - Date.parse(rf.date)) / (365.25 * 86_400_000)) : undefined;
+    basis = rf && rl ? `Umsatz je Aktie ${fy(rf.date)}–${fy(rl.date)} (FCF schwankt zu stark)` : basis;
+  }
+  if (!perShare) notes.push("Aktienzahl früherer Jahre fehlt – Wachstum ohne Verwässerung gerechnet");
+  else if (dilution > 1.1) notes.push(`Aktienzahl im Zeitraum um ${((dilution - 1) * 100).toFixed(0)} % gestiegen – im Wachstum berücksichtigt`);
+  if (raw === undefined) return { unavailable: "Kein Wachstum aus FCF oder Umsatz ableitbar" };
+  const growth = Math.min(a.maxGrowth, Math.max(0, raw));
+  if (growth !== raw) notes.push(`Wachstum ${raw < 0 ? "auf 0 % angehoben" : "begrenzt"} (historisch ${(raw * 100).toFixed(1).replace(".", ",")} % p. a.)`);
+  if (years < 4) notes.push(`Wachstum aus nur ${Math.round(years)} Jahren abgeleitet`);
+
+  // Bilanzwährung → Handelswährung (z. B. EUR-Bilanz, Notierung in USD)
+  const sameCurrency = !market.financialCurrency || market.financialCurrency === market.currency;
+  const conv = (v: number) => (sameCurrency ? v : toTradingCurrency?.(v));
+  const value = conv(dcfPerShare(baseFcf, growth, a, market.sharesOutstanding));
+  const low = conv(dcfPerShare(baseFcf, growth, a, market.sharesOutstanding, a.discountRate + 0.01));
+  const high = conv(dcfPerShare(baseFcf, growth, a, market.sharesOutstanding, a.discountRate - 0.01));
+  if (value === undefined || low === undefined || high === undefined) return { unavailable: "Wechselkurs für die Bilanzwährung fehlt" };
+
+  return {
+    value,
+    low,
+    high,
+    baseFcf,
+    baseYears: `${fy(last3[0].date)}–${fy(last3[2].date)}`,
+    growth,
+    growthBasis: basis,
+    assumptions: a,
+    shares: market.sharesOutstanding,
+    deviation: market.price ? market.price.value / value - 1 : undefined,
+    notes,
+  };
+}
+
+export function evaluateCheck(
+  market: MarketData,
+  opts: { growthRows?: StatementRow[]; toTradingCurrency?: (v: number) => number | undefined; asOf?: string; dcf?: DcfAssumptions } = {},
+): CheckResult {
   const asOf = opts.asOf ?? new Date().toISOString().slice(0, 10);
   const items = [
     checkDividends(market.dividends, Number(asOf.slice(0, 4)), asOf),
@@ -244,6 +352,7 @@ export function evaluateCheck(market: MarketData, opts: { growthRows?: Statement
     symbol: market.symbol,
     name: market.name,
     currency: market.currency,
+    financialCurrency: market.financialCurrency,
     exchange: market.exchange,
     sector: market.sector,
     price: market.price && { value: market.price.value, asOf: market.price.asOf },
@@ -258,6 +367,7 @@ export function evaluateCheck(market: MarketData, opts: { growthRows?: Statement
         }
       : undefined,
     fairValue: fairValueByYield(market.dividends, market.monthlyCloses, market.price?.value, asOf),
+    dcf: dcfValue(market, opts.dcf, opts.toTradingCurrency),
     items,
     overall,
     passed: items.filter((i) => i.light === "GREEN").length,
