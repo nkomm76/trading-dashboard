@@ -9,6 +9,8 @@ export type Sourced<T = number> = {
 
 export type DividendPayment = { date: string; amount: number };
 
+export type PricePoint = { date: string; close: number };
+
 export type StatementRow = {
   date: string; // Periodenende
   dilutedEPS?: number;
@@ -32,6 +34,8 @@ export type MarketData = {
   epsTTM?: Sourced;
   nextExDividend?: Sourced<string>;
   dividends: DividendPayment[];
+  /** Monatsschlusskurse (split-bereinigt) für Bewertungen über mehrere Jahre */
+  monthlyCloses?: PricePoint[];
   quarterly: StatementRow[];
   annual: StatementRow[];
   fetchedAt: string;

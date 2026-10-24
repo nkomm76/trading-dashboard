@@ -4,6 +4,7 @@ import Link from "next/link";
 import { startTransition, useActionState, useRef } from "react";
 import { checkStock } from "@/app/actions";
 import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
+import { PriceChart } from "./charts";
 import { Light } from "./light";
 
 const OVERALL: Record<string, string> = {
@@ -107,6 +108,48 @@ export function StockCheck() {
                     </button>
                   ))}
               </div>
+            )}
+          </section>
+
+          <section className="card p-5">
+            <h3 className="mb-3 text-sm font-semibold">Kursverlauf</h3>
+            <PriceChart key={r.symbol} symbol={r.symbol} currency={r.currency} fairValue={r.fairValue?.value} />
+          </section>
+
+          <section className="card p-5">
+            <h3 className="text-sm font-semibold">Fairer Wert (Rendite-Mittelwert)</h3>
+            {r.fairValue ? (
+              <>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                  <span className="tabular text-2xl font-semibold">{fmtMoney(r.fairValue.value, r.currency)}</span>
+                  {r.fairValue.deviation !== undefined && (
+                    <span className={`text-sm font-medium ${r.fairValue.deviation <= 0 ? "text-light-green" : "text-light-orange"}`}>
+                      Kurs {fmtPct(Math.abs(r.fairValue.deviation))} {r.fairValue.deviation <= 0 ? "unter" : "über"} dem fairen Wert
+                    </span>
+                  )}
+                </div>
+                <ul className="tabular mt-3 space-y-0.5 text-xs text-muted">
+                  <li>
+                    Formel: erwartete Jahresdividende {fmtMoney(r.fairValue.dividend, r.currency)} ÷ Ø-Dividendenrendite {fmtPct(r.fairValue.avgYield, 2)}
+                  </li>
+                  <li>Jahresdividende: {r.fairValue.dividendBasis}</li>
+                  <li>
+                    Ø-Rendite aus {r.fairValue.months} Monatsschlusskursen {fmtDate(r.fairValue.from)} – {fmtDate(r.fairValue.to)} (Spanne {fmtPct(r.fairValue.minYield, 2)} bis{" "}
+                    {fmtPct(r.fairValue.maxYield, 2)})
+                  </li>
+                  {r.fairValue.notes.map((n) => (
+                    <li key={n} className="text-light-orange">
+                      Hinweis: {n}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-xs text-muted">
+                  Annahme: Die Aktie kehrt zu ihrer üblichen Dividendenrendite zurück. Hohe Rendite gegenüber dem Durchschnitt deutet auf einen günstigen Kurs hin – oder auf
+                  ein Problem, das der Markt einpreist.
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-muted">Nicht berechenbar: Dafür braucht es eine regelmäßige, aktuelle Dividende und mindestens 3 Jahre Kurs- und Dividendenhistorie.</p>
             )}
           </section>
 

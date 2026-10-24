@@ -1,5 +1,5 @@
-import type { DividendPayment, MarketData, StatementRow } from "./data/types";
-import { annualTotals, computeMetrics, detectFrequency } from "./metrics";
+import type { DividendPayment, MarketData, PricePoint, StatementRow } from "./data/types";
+import { annualTotals, computeMetrics, detectDividendCut, detectFrequency } from "./metrics";
 import type { LightColor } from "./rating";
 
 // Schnellbewertung vor dem Kauf. Jede Prüfung ist GREY, wenn die Datenbasis fehlt – nichts wird geschätzt.
@@ -22,6 +22,7 @@ export type CheckResult = {
   expectedYield?: { value: number; basis: string };
   trailingYield?: number;
   schedule?: { frequency?: string; months?: string[]; last?: { date: string; amount: number }; nextExDate?: string };
+  fairValue?: FairValue;
   items: CheckItem[];
   overall: LightColor;
   passed: number;
@@ -145,17 +146,86 @@ export function checkGrowth(annual: StatementRow[]): CheckItem {
   return { ...base, light: "RED", verdict: "Umsatz und Gewinn nicht gewachsen", details };
 }
 
-/** Erwartete Rendite: letzte Zahlung auf ein Jahr hochgerechnet; Rückfall auf die Zahlungen der letzten 12 Monate. */
-export function expectedYield(divs: DividendPayment[], price: number | undefined, asOf = new Date().toISOString().slice(0, 10)) {
-  if (!price || !divs.length) return undefined;
+/** Erwartete Jahresdividende: letzte Zahlung auf ein Jahr hochgerechnet (nur bei regelmäßigem Rhythmus und aktueller Zahlung). */
+export function expectedAnnualDividend(divs: DividendPayment[], asOf = new Date().toISOString().slice(0, 10)) {
+  if (!divs.length) return undefined;
   const freq = detectFrequency(divs, asOf);
   const perYear = PER_YEAR[freq ?? "unregelmäßig"];
   const last = divs[divs.length - 1];
   const lastAgeDays = (Date.parse(asOf) - Date.parse(last.date)) / 86_400_000;
-  if (perYear && lastAgeDays < 400) {
-    return { value: (last.amount * perYear) / price, basis: `letzte Zahlung (${num(last.amount)}) × ${perYear}, ${freq}` };
-  }
+  if (perYear && lastAgeDays < 400) return { amount: last.amount * perYear, basis: `letzte Zahlung (${num(last.amount)}) × ${perYear}, ${freq}` };
   return undefined;
+}
+
+/** Erwartete Rendite: letzte Zahlung auf ein Jahr hochgerechnet. */
+export function expectedYield(divs: DividendPayment[], price: number | undefined, asOf = new Date().toISOString().slice(0, 10)) {
+  const exp = expectedAnnualDividend(divs, asOf);
+  if (!price || !exp) return undefined;
+  return { value: exp.amount / price, basis: exp.basis };
+}
+
+export type FairValue = {
+  value: number;
+  dividend: number; // erwartete Jahresdividende
+  dividendBasis: string;
+  avgYield: number; // Ø-Dividendenrendite im Betrachtungszeitraum
+  minYield: number;
+  maxYield: number;
+  from: string;
+  to: string;
+  months: number;
+  deviation?: number; // Kurs / fairer Wert − 1
+  notes: string[];
+};
+
+const YEAR_MS = 365.25 * 86_400_000;
+
+/**
+ * Fairer Wert nach dem Rendite-Mittelwert: erwartete Jahresdividende ÷ Ø-Dividendenrendite der letzten 5 Jahre.
+ * Die Rendite je Monatsende = Dividenden der 12 Monate davor ÷ Monatsschlusskurs.
+ */
+export function fairValueByYield(
+  divs: DividendPayment[],
+  closes: PricePoint[] | undefined,
+  price: number | undefined,
+  asOf = new Date().toISOString().slice(0, 10),
+): FairValue | undefined {
+  const exp = expectedAnnualDividend(divs, asOf);
+  if (!exp || !closes?.length || !divs.length) return undefined;
+  const end = Date.parse(asOf);
+  const firstDiv = Date.parse(divs[0].date);
+  const yields: { date: string; y: number }[] = [];
+  for (const c of closes) {
+    const t = Date.parse(c.date);
+    // Nur Monate, für die eine volle 12-Monats-Dividendenhistorie vorliegt
+    if (t > end || t < end - 5 * YEAR_MS || t - YEAR_MS < firstDiv - 31 * 86_400_000 || c.close <= 0) continue;
+    const ttm = divs.filter((d) => {
+      const dt = Date.parse(d.date);
+      return dt <= t && dt > t - YEAR_MS;
+    }).reduce((a, d) => a + d.amount, 0);
+    if (ttm > 0) yields.push({ date: c.date, y: ttm / c.close });
+  }
+  // Mindestens 3 Jahre Monatswerte, sonst ist der Mittelwert nicht belastbar
+  if (yields.length < 36) return undefined;
+
+  const avg = yields.reduce((a, x) => a + x.y, 0) / yields.length;
+  const value = exp.amount / avg;
+  const notes: string[] = [];
+  if (yields.length < 54) notes.push(`nur ${(yields.length / 12).toFixed(1).replace(".", ",")} Jahre Kurs- und Dividendenhistorie`);
+  if (detectDividendCut(divs, detectFrequency(divs, asOf))) notes.push("Dividende wurde zuletzt gekürzt – Wert nur eingeschränkt aussagekräftig");
+  return {
+    value,
+    dividend: exp.amount,
+    dividendBasis: exp.basis,
+    avgYield: avg,
+    minYield: Math.min(...yields.map((x) => x.y)),
+    maxYield: Math.max(...yields.map((x) => x.y)),
+    from: yields[0].date,
+    to: yields[yields.length - 1].date,
+    months: yields.length,
+    deviation: price ? price / value - 1 : undefined,
+    notes,
+  };
 }
 
 export function evaluateCheck(market: MarketData, opts: { growthRows?: StatementRow[]; toTradingCurrency?: (v: number) => number | undefined; asOf?: string } = {}): CheckResult {
@@ -187,6 +257,7 @@ export function evaluateCheck(market: MarketData, opts: { growthRows?: Statement
           nextExDate: market.nextExDividend?.value,
         }
       : undefined,
+    fairValue: fairValueByYield(market.dividends, market.monthlyCloses, market.price?.value, asOf),
     items,
     overall,
     passed: items.filter((i) => i.light === "GREEN").length,

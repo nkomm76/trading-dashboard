@@ -1,6 +1,6 @@
 import "server-only";
 import YahooFinance from "yahoo-finance2";
-import type { MarketData, StatementRow } from "./types";
+import type { MarketData, PricePoint, StatementRow } from "./types";
 
 const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 const SOURCE = "Yahoo Finance";
@@ -79,8 +79,44 @@ export async function fetchMarketData(symbol: string): Promise<MarketData> {
     dividends: (chart?.events?.dividends ?? [])
       .map((d) => ({ date: day(d.date), amount: d.amount }))
       .sort((a, b) => a.date.localeCompare(b.date)),
+    monthlyCloses: (chart?.quotes ?? [])
+      .filter((q) => typeof q.close === "number")
+      .map((q) => ({ date: day(q.date), close: q.close as number })),
     quarterly: toRows(quarterly as Record<string, unknown>[]),
     annual: toRows(annual as Record<string, unknown>[]),
     fetchedAt: now.toISOString(),
   };
+}
+
+export type ChartRange = "1d" | "1w" | "6m" | "1y" | "5y";
+
+// Intervall je Zeitraum: intraday fein, über Jahre wöchentlich
+const RANGES: Record<ChartRange, { days: number; interval: "5m" | "30m" | "1d" | "1wk" }> = {
+  "1d": { days: 7, interval: "5m" }, // Puffer für Wochenenden und Feiertage, unten auf den letzten Handelstag gekürzt
+  "1w": { days: 7, interval: "30m" },
+  "6m": { days: 183, interval: "1d" },
+  "1y": { days: 365, interval: "1d" },
+  "5y": { days: 5 * 365 + 2, interval: "1wk" },
+};
+
+export async function fetchPriceHistory(symbol: string, range: ChartRange): Promise<{ currency?: string; points: (PricePoint & { time: number })[] }> {
+  const { days, interval } = RANGES[range];
+  // Nur reguläre Handelszeit, ohne vor- und nachbörslichen Handel
+  const chart = await yf.chart(symbol, { period1: new Date(Date.now() - days * 86_400_000), interval, includePrePost: false });
+  let points = chart.quotes
+    .filter((q) => typeof q.close === "number")
+    .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
+  // Tageskerzen enden oft am Vortag: aktuellen Kurs als letzten Punkt anhängen
+  const { regularMarketPrice: lastPrice, regularMarketTime: lastTime } = chart.meta;
+  if (typeof lastPrice === "number" && lastTime) {
+    const t = new Date(lastTime).getTime();
+    if (!points.length || t > points[points.length - 1].time) points.push({ date: new Date(t).toISOString(), time: t, close: lastPrice });
+  }
+  if (range === "1d" && points.length) {
+    const tz = chart.meta.exchangeTimezoneName;
+    const localDay = (t: number) => new Date(t).toLocaleDateString("en-CA", { timeZone: tz });
+    const last = localDay(points[points.length - 1].time);
+    points = points.filter((p) => localDay(p.time) === last);
+  }
+  return { currency: chart.meta.currency, points };
 }
