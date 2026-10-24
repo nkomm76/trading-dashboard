@@ -120,3 +120,11 @@ export async function fetchPriceHistory(symbol: string, range: ChartRange): Prom
   }
   return { currency: chart.meta.currency, points };
 }
+
+/** Tagesschlusskurse, dividendenbereinigt (adjclose), ab dem angegebenen Datum. */
+export async function fetchAdjustedDaily(symbol: string, from: Date): Promise<PricePoint[]> {
+  const chart = await yf.chart(symbol, { period1: from, interval: "1d" });
+  return chart.quotes
+    .map((q) => ({ date: day(q.date), close: typeof q.adjclose === "number" ? q.adjclose : q.close }))
+    .filter((p): p is PricePoint => typeof p.close === "number" && p.close > 0);
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const nf = (d = 2) => (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: d }) : "–");
 const compact = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 }) : "–");
@@ -192,6 +192,119 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
       <p className="mt-1 text-xs text-muted">
         Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert" : ""}.
         {fairValue !== undefined && closes.length > 0 && !showFair && " Fairer Wert liegt außerhalb des dargestellten Kursbereichs."}
+      </p>
+    </div>
+  );
+}
+
+type SeasonalData = {
+  years: number[];
+  path: { day: number; avg: number; current?: number }[];
+  months: { month: number; avg: number; positive: number; count: number }[];
+};
+const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const MONTH_STARTS = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+const pct1 = (v: unknown) => (typeof v === "number" ? `${v >= 0 ? "+" : ""}${(v * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %` : "–");
+
+export function SeasonalityChart({ symbol }: { symbol: string }) {
+  const [span, setSpan] = useState<5 | 10>(10);
+  const [view, setView] = useState<"path" | "months">("path");
+  const [data, setData] = useState<{ symbol: string; year: number; 5: SeasonalData | null; 10: SeasonalData | null }>();
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/seasonality?symbol=${encodeURIComponent(symbol)}`)
+      .then((r) => (r.ok ? r.json() : { 5: null, 10: null }))
+      .catch(() => ({ 5: null, 10: null }))
+      .then((d) => active && setData({ ...d, symbol }));
+    return () => {
+      active = false;
+    };
+  }, [symbol]);
+
+  const loaded = data?.symbol === symbol ? data : undefined;
+  const s = loaded?.[span];
+  const pill = (on: boolean) => `rounded-full border px-3 py-0.5 ${on ? "border-accent text-accent" : "border-border text-muted"}`;
+  const dayLabel = (d: unknown) => {
+    if (typeof d !== "number") return "";
+    const date = new Date(Date.UTC(2001, 0, d));
+    return date.toLocaleDateString("de-DE", { day: "2-digit", month: "short", timeZone: "UTC" });
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex gap-1">
+          <button type="button" onClick={() => setView("path")} className={pill(view === "path")}>
+            Jahresverlauf
+          </button>
+          <button type="button" onClick={() => setView("months")} className={pill(view === "months")}>
+            Monate
+          </button>
+        </div>
+        <div className="flex gap-1">
+          {([5, 10] as const).map((n) => (
+            <button key={n} type="button" onClick={() => setSpan(n)} className={pill(span === n)}>
+              {n} Jahre
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!loaded ? (
+        <p className="py-24 text-center text-sm text-muted">Lade Saisonalität …</p>
+      ) : !s ? (
+        <p className="py-24 text-center text-sm text-muted">Für diesen Zeitraum liefert die Quelle nicht genug Kurshistorie.</p>
+      ) : view === "path" ? (
+        <div className="h-64">
+          <ResponsiveContainer>
+            <LineChart data={s.path}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="day" type="number" domain={[1, 365]} ticks={MONTH_STARTS} tickFormatter={(d: number) => MONTHS[MONTH_STARTS.indexOf(d)]} tick={{ fontSize: 11, fill: "var(--muted)" }} />
+              <YAxis tickFormatter={(v: number) => `${Math.round(v * 100)} %`} tick={{ fontSize: 12, fill: "var(--muted)" }} width={48} />
+              <ReferenceLine y={0} stroke="var(--muted)" />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={dayLabel} formatter={(v, name) => [pct1(v), name]} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line dataKey="avg" name={`Ø ${s.years[0]}–${s.years[s.years.length - 1]}`} stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line dataKey="current" name={String(loaded.year)} stroke="var(--orange)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <>
+          <div className="h-56">
+            <ResponsiveContainer>
+              <BarChart data={s.months.map((m) => ({ ...m, label: MONTHS[m.month - 1] }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted)" }} interval={0} />
+                <YAxis tickFormatter={(v: number) => `${(v * 100).toFixed(0)} %`} tick={{ fontSize: 12, fill: "var(--muted)" }} width={44} />
+                <ReferenceLine y={0} stroke="var(--muted)" />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  cursor={{ fill: "var(--border)", opacity: 0.5 }}
+                  formatter={(v, _n, item) => [`${pct1(v)} · positiv in ${item.payload.positive} von ${item.payload.count} Jahren`, "Ø Monatsrendite"]}
+                />
+                <Bar dataKey="avg" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+                  {s.months.map((m) => (
+                    <Cell key={m.month} fill={m.avg >= 0 ? "var(--green)" : "var(--red)"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="tabular mt-1 grid grid-cols-12 pl-11 text-center text-[10px] text-muted sm:text-xs">
+            {s.months.map((m) => (
+              <span key={m.month} title={`positiv in ${m.positive} von ${m.count} Jahren`}>
+                {m.positive}/{m.count}
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted">Darunter: in wie vielen Jahren der Monat positiv war.</p>
+        </>
+      )}
+      <p className="mt-2 text-xs text-muted">
+        Quelle: Yahoo Finance, dividendenbereinigte Tageskurse
+        {s && s.years.length < span && `; nur ${s.years.length} volle Jahre verfügbar`}. Vergangene Muster wiederholen sich nicht zwingend.
       </p>
     </div>
   );

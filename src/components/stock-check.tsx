@@ -4,7 +4,7 @@ import Link from "next/link";
 import { startTransition, useActionState, useRef } from "react";
 import { checkStock } from "@/app/actions";
 import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
-import { PriceChart } from "./charts";
+import { PriceChart, SeasonalityChart } from "./charts";
 import { Light } from "./light";
 
 const OVERALL: Record<string, string> = {
@@ -114,6 +114,11 @@ export function StockCheck() {
           <section className="card p-5">
             <h3 className="mb-3 text-sm font-semibold">Kursverlauf</h3>
             <PriceChart key={r.symbol} symbol={r.symbol} currency={r.currency} fairValue={r.fairValue?.value} />
+          </section>
+
+          <section className="card p-5">
+            <h3 className="mb-3 text-sm font-semibold">Saisonalität</h3>
+            <SeasonalityChart key={r.symbol} symbol={r.symbol} />
           </section>
 
           <section className="card p-5">
