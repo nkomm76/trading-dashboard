@@ -128,3 +128,18 @@ export async function fetchAdjustedDaily(symbol: string, from: Date): Promise<Pr
     .map((q) => ({ date: day(q.date), close: typeof q.adjclose === "number" ? q.adjclose : q.close }))
     .filter((p): p is PricePoint => typeof p.close === "number" && p.close > 0);
 }
+
+/** Kurse für einen frei gewählten Ausschnitt (Zoom); das Intervall richtet sich nach Länge und Alter des Ausschnitts. */
+export async function fetchPriceWindow(symbol: string, from: number, to: number): Promise<{ currency?: string; points: (PricePoint & { time: number })[] }> {
+  const span = to - from;
+  const age = Date.now() - from;
+  const DAY = 86_400_000;
+  // Intraday-Kurse gibt Yahoo nur für etwa 60 Tage zurück
+  const interval = age <= 55 * DAY && span <= 3 * DAY ? "5m" : age <= 55 * DAY && span <= 45 * DAY ? "30m" : span <= 3 * 365 * DAY ? "1d" : "1wk";
+  const chart = await yf.chart(symbol, { period1: new Date(from), period2: new Date(to + DAY), interval, includePrePost: false });
+  const points = chart.quotes
+    .filter((q) => typeof q.close === "number")
+    .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }))
+    .filter((p) => p.time >= from && p.time <= to);
+  return { currency: chart.meta.currency, points };
+}

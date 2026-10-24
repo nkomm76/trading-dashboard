@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useEffect, useRef, useState } from "react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const nf = (d = 2) => (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: d }) : "–");
 const compact = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 }) : "–");
@@ -111,6 +111,9 @@ type PricePoint = { time: number; close: number };
 export function PriceChart({ symbol, currency, fairValue }: { symbol: string; currency: string; fairValue?: number }) {
   const [range, setRange] = useState<Range>("1y");
   const [data, setData] = useState<{ key: string; points: PricePoint[] }>();
+  // Zoom: per Maus aufgezogener Ausschnitt; feinere Kurse werden nachgeladen
+  const [zoom, setZoom] = useState<{ from: number; to: number; points?: PricePoint[] }>();
+  const [drag, setDrag] = useState<{ start?: number; end?: number }>();
   const key = `${symbol}|${range}`;
 
   useEffect(() => {
@@ -124,14 +127,57 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
     };
   }, [symbol, range, key]);
 
-  const points = data?.key === key ? data.points : undefined;
-  const intraday = range === "1d" || range === "1w";
+  const all = data?.key === key ? data.points : undefined;
+  const points = zoom ? (zoom.points ?? all?.filter((p) => p.time >= zoom.from && p.time <= zoom.to)) : all;
+
+  const zoomTo = (from: number, to: number) => {
+    setZoom({ from, to });
+    fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}&from=${Math.round(from)}&to=${Math.round(to)}`)
+      .then((r) => (r.ok ? r.json() : { points: [] }))
+      .catch(() => ({ points: [] }))
+      .then((d: { points: PricePoint[] }) => {
+        // Nur übernehmen, wenn der Ausschnitt noch aktuell ist und die Quelle mehr Details liefert
+        setZoom((z) => (z && z.from === from && z.to === to && (d.points?.length ?? 0) > 1 ? { ...z, points: d.points } : z));
+      });
+  };
+  // Mausposition → Zeitpunkt: Die Zeitachse ist linear über die Breite des Gitters
+  const boxRef = useRef<HTMLDivElement>(null);
+  const timeAt = (clientX: number) => {
+    const grid = boxRef.current?.querySelector(".recharts-cartesian-grid")?.getBoundingClientRect();
+    if (!grid || !points || points.length < 2 || grid.width <= 0) return undefined;
+    const f = Math.min(1, Math.max(0, (clientX - grid.left) / grid.width));
+    return points[0].time + f * (points[points.length - 1].time - points[0].time);
+  };
+  // Endpunkt ist die Position beim Loslassen (bzw. beim Verlassen des Charts)
+  const finishDrag = (clientX: number) => {
+    const end = timeAt(clientX) ?? drag?.end;
+    if (drag?.start !== undefined && end !== undefined && end !== drag.start) {
+      const [from, to] = drag.start < end ? [drag.start, end] : [end, drag.start];
+      // Mindestens 3 Kurspunkte im Ausschnitt
+      if ((points ?? []).filter((p) => p.time >= from && p.time <= to).length >= 3) zoomTo(from, to);
+    }
+    setDrag(undefined);
+  };
+
+  const span = points && points.length > 1 ? points[points.length - 1].time - points[0].time : 0;
+  const DAY = 86_400_000;
+  // Bei kurzen Ausschnitten liegen Intraday-Kurse vor: Uhrzeit anzeigen
+  const intraday = zoom ? span <= 45 * DAY && points!.length / Math.max(1, span / DAY) > 2 : range === "1d" || range === "1w";
   const first = points?.[0]?.close;
   const last = points?.[points.length - 1]?.close;
   const change = first && last ? last / first - 1 : undefined;
   const color = change === undefined || change >= 0 ? "var(--green)" : "var(--red)";
   const fmtTick = (t: number) =>
-    new Date(t).toLocaleString("de-DE", range === "1d" ? { hour: "2-digit", minute: "2-digit" } : range === "1w" ? { weekday: "short", day: "2-digit" } : range === "6m" ? { day: "2-digit", month: "short" } : { month: "short", year: "2-digit" });
+    new Date(t).toLocaleString(
+      "de-DE",
+      span <= 1.5 * DAY
+        ? { hour: "2-digit", minute: "2-digit" }
+        : span <= 10 * DAY
+          ? { weekday: "short", day: "2-digit" }
+          : span <= 250 * DAY
+            ? { day: "2-digit", month: "short" }
+            : { month: "short", year: "2-digit" },
+    );
   const fmtFull = (t: unknown) =>
     typeof t === "number" ? new Date(t).toLocaleString("de-DE", intraday ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
   const money = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ` ${currency}` : "–");
@@ -146,10 +192,23 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-1 text-xs">
           {RANGE_LABELS.map(([r, label]) => (
-            <button key={r} type="button" onClick={() => setRange(r)} className={`rounded-full border px-3 py-0.5 ${range === r ? "border-accent text-accent" : "border-border text-muted"}`}>
+            <button
+              key={r}
+              type="button"
+              onClick={() => {
+                setRange(r);
+                setZoom(undefined);
+              }}
+              className={`rounded-full border px-3 py-0.5 ${range === r && !zoom ? "border-accent text-accent" : "border-border text-muted"}`}
+            >
               {label}
             </button>
           ))}
+          {zoom && (
+            <button type="button" onClick={() => setZoom(undefined)} className="rounded-full border border-accent bg-accent px-3 py-0.5 text-white">
+              Zoom zurücksetzen
+            </button>
+          )}
         </div>
         {change !== undefined && (
           <span className="tabular text-sm font-medium" style={{ color }}>
@@ -158,7 +217,15 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
           </span>
         )}
       </div>
-      <div className="h-64">
+      {/* Aufziehen über eigene Mausereignisse: unabhängig von der Drosselung im Chart */}
+      <div
+        ref={boxRef}
+        className="h-64 cursor-crosshair select-none"
+        onMouseDown={(e) => setDrag({ start: timeAt(e.clientX) })}
+        onMouseMove={(e) => drag && setDrag({ ...drag, end: timeAt(e.clientX) })}
+        onMouseUp={(e) => finishDrag(e.clientX)}
+        onMouseLeave={(e) => drag && finishDrag(e.clientX)}
+      >
         {!points ? (
           <p className="pt-24 text-center text-sm text-muted">Lade Kursverlauf …</p>
         ) : points.length === 0 ? (
@@ -185,12 +252,13 @@ export function PriceChart({ symbol, currency, fairValue }: { symbol: string; cu
               {showFair && (
                 <ReferenceLine y={fairValue} stroke="var(--accent)" strokeDasharray="5 4" label={{ value: "fairer Wert", position: "insideTopLeft", fontSize: 11, fill: "var(--accent)" }} />
               )}
+              {drag?.start !== undefined && drag.end !== undefined && <ReferenceArea x1={drag.start} x2={drag.end} fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.4} />}
             </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
       <p className="mt-1 text-xs text-muted">
-        Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert" : ""}.
+        Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert" : ""}.
         {fairValue !== undefined && closes.length > 0 && !showFair && " Fairer Wert liegt außerhalb des dargestellten Kursbereichs."}
       </p>
     </div>
