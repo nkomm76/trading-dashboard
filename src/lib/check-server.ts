@@ -1,6 +1,8 @@
 import "server-only";
 import { evaluateCheck, type CheckResult } from "./check";
 import { convert, fetchEcbRates } from "./data/fx";
+import { fetchEulerpoolAnnual } from "./data/eulerpool";
+import { extendHistory, type Extension } from "./data/eulerpool-normalize";
 import { fetchSecAnnual, fetchSecQuarterly, lookupCik } from "./data/sec";
 import { mergeRows, samePeriod } from "./refresh";
 import { fetchMarketData, searchStocks, type SearchHit } from "./data/yahoo";
@@ -29,6 +31,10 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   const target = symbol ?? pickListing(q, listings)?.symbol ?? (ISIN.test(q) ? undefined : q);
   if (!target) return { listings, error: "Zu dieser ISIN wurde keine Aktie gefunden." };
 
+  // Eulerpool parallel laden (nur per ISIN); dient ausschließlich zum Verlängern der Jahreshistorie
+  const isin = ISIN.test(q) ? q : undefined;
+  const eulerpool = isin ? fetchEulerpoolAnnual(isin) : Promise.resolve([]);
+
   let market;
   try {
     market = await fetchMarketData(target);
@@ -54,12 +60,30 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
     if (secYears > yahooYears) growthRows = sec;
   }
 
+  const sources = ["Yahoo Finance", ...(growthRows !== market.annual || chartQuarterly ? ["SEC"] : [])];
+  const ep = await eulerpool;
+  const describe = (x: Extension) =>
+    x.addedYears.length
+      ? x.addedYears.length === 1
+        ? `Jahr ${x.addedYears[0]} ergänzt aus Eulerpool`
+        : `Jahre ${Math.min(...x.addedYears)}–${Math.max(...x.addedYears)} ergänzt aus Eulerpool`
+      : x.rejected && ep.length
+        ? `Eulerpool nicht verwendet: ${x.rejected}`
+        : undefined;
+  const growthExt = extendHistory(growthRows, ep);
+  // REITs: Eulerpool zieht Immobilienkäufe vom Free Cashflow ab – für den DCF nicht vergleichbar
+  const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(market.annual, ep);
+  if (growthExt.addedYears.length || dcfExt?.addedYears.length) sources.push("Eulerpool");
+
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
   const result = evaluateCheck(market, {
-    growthRows,
+    growthRows: growthExt.rows,
+    growthNote: describe(growthExt),
+    dcfHistory: dcfExt && { annual: dcfExt.rows, note: describe(dcfExt) },
+    sources,
     chartQuarterly,
     dcf: (await getThresholds()).dcf,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
-  return { result, listings, isin: ISIN.test(q) ? q : undefined };
+  return { result, listings, isin };
 }

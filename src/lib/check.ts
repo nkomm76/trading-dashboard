@@ -29,6 +29,8 @@ export type CheckResult = {
   dcf?: DcfResult;
   /** Dividende je Aktie der letzten 10 abgeschlossenen Kalenderjahre */
   dividendsByYear: { year: number; total: number }[];
+  /** Datenquellen dieses Checks für den Hinweis unten */
+  sources: string[];
   /** EPS und Free Cashflow der letzten 3 Jahre */
   fundamentals: { quarterly: FundamentalRow[]; annual: FundamentalRow[] };
   items: CheckItem[];
@@ -130,7 +132,7 @@ function growthOf(rows: StatementRow[], key: "totalRevenue" | "dilutedEPS"): Gro
 }
 
 /** Positives Umsatz- und Gewinnwachstum über (bis zu) 5 Jahre. */
-export function checkGrowth(annual: StatementRow[]): CheckItem {
+export function checkGrowth(annual: StatementRow[], note?: string): CheckItem {
   const base = { key: "growth" as const, title: "Positives Gewinn- und Umsatzwachstum (5 Jahre)" };
   const rev = growthOf(annual, "totalRevenue");
   const eps = growthOf(annual, "dilutedEPS");
@@ -141,6 +143,7 @@ export function checkGrowth(annual: StatementRow[]): CheckItem {
       ? `${label}: ${fy(g.from)} → ${fy(g.to)}${g.cagr !== undefined ? `, ${pct(g.cagr)} p. a.` : g.last > g.first ? ", gestiegen" : ", gesunken"}`
       : `${label}: keine Daten`;
   const details = [describe("Umsatz", rev), describe("Gewinn je Aktie", eps)];
+  if (note) details.push(note);
 
   if (!rev && !eps) return { ...base, light: "GREY", verdict: "Keine Daten zum Wachstum", details };
   const span = Math.max(rev?.years ?? 0, eps?.years ?? 0);
@@ -276,8 +279,9 @@ export function dcfValue(
   market: MarketData,
   a: DcfAssumptions = DEFAULT_THRESHOLDS.dcf,
   toTradingCurrency?: (v: number) => number | undefined,
+  history?: { annual: StatementRow[]; note?: string },
 ): DcfResult {
-  const rows = market.annual.map((r) => ({ date: r.date, fcf: fcfOf(r), shares: r.dilutedAverageShares })).filter((r) => r.fcf !== undefined) as {
+  const rows = (history?.annual ?? market.annual).map((r) => ({ date: r.date, fcf: fcfOf(r), shares: r.dilutedAverageShares })).filter((r) => r.fcf !== undefined) as {
     date: string;
     fcf: number;
     shares?: number;
@@ -292,17 +296,19 @@ export function dcfValue(
   const baseFcf = last3.reduce((s, r) => s + r.fcf, 0) / 3;
   if (baseFcf <= 0) return { unavailable: "Free Cashflow im Schnitt der letzten 3 Jahre nicht positiv" };
 
-  const first = rows[0];
+  // Wachstum über höchstens 5 Jahre (6 Stichtage)
+  const first = rows[Math.max(0, rows.length - 6)];
   const last = rows[rows.length - 1];
   const years = (Date.parse(last.date) - Date.parse(first.date)) / (365.25 * 86_400_000);
   const notes: string[] = [];
+  if (history?.note) notes.push(history.note);
   // Wachstum je Aktie: Neue Aktien (z. B. für Zukäufe) verteilen den Cashflow auf mehr Anteile
   const perShare = first.shares && last.shares;
   const dilution = perShare ? last.shares! / first.shares! : 1;
   let raw = cagr(first.fcf, last.fcf / dilution, years);
   let basis = `Free Cashflow${perShare ? " je Aktie" : ""} ${fy(first.date)}–${fy(last.date)}`;
   if (raw === undefined) {
-    const rev = market.annual.filter((r) => typeof r.totalRevenue === "number");
+    const rev = (history?.annual ?? market.annual).filter((r) => typeof r.totalRevenue === "number").slice(-6);
     const rf = rev[0];
     const rl = rev[rev.length - 1];
     const revDilution = rf?.dilutedAverageShares && rl?.dilutedAverageShares ? rl.dilutedAverageShares / rf.dilutedAverageShares : 1;
@@ -354,6 +360,10 @@ export function evaluateCheck(
     growthRows?: StatementRow[];
     /** Quartale für das EPS-/FCF-Diagramm, ggf. um SEC-Perioden erweitert */
     chartQuarterly?: StatementRow[];
+    growthNote?: string;
+    /** Jahreswerte für den DCF (ggf. um Eulerpool verlängert) */
+    dcfHistory?: { annual: StatementRow[]; note?: string };
+    sources?: string[];
     toTradingCurrency?: (v: number) => number | undefined;
     asOf?: string;
     dcf?: DcfAssumptions;
@@ -363,7 +373,7 @@ export function evaluateCheck(
   const items = [
     checkDividends(market.dividends, Number(asOf.slice(0, 4)), asOf),
     checkPayout(market, opts.toTradingCurrency),
-    checkGrowth(opts.growthRows ?? market.annual),
+    checkGrowth(opts.growthRows ?? market.annual, opts.growthNote),
   ];
   const rated = items.filter((i) => i.light !== "GREY");
   const overall = rated.length ? rated.reduce<LightColor>((w, i) => (ORDER[i.light] > ORDER[w] ? i.light : w), "GREEN") : "GREY";
@@ -390,7 +400,8 @@ export function evaluateCheck(
         }
       : undefined,
     fairValue: fairValueByYield(market.dividends, market.monthlyCloses, market.price?.value, asOf),
-    dcf: dcfValue(market, opts.dcf, opts.toTradingCurrency),
+    dcf: dcfValue(market, opts.dcf, opts.toTradingCurrency, opts.dcfHistory),
+    sources: opts.sources ?? ["Yahoo Finance"],
     dividendsByYear: [...annualTotals(market.dividends)]
       .filter(([y]) => y < year && y >= year - 10)
       .map(([y, total]) => ({ year: y, total })),

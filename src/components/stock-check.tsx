@@ -252,7 +252,7 @@ export function StockCheck() {
           </section>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-muted">{OVERALL[r.overall]}. Mechanische Auswertung, keine Anlageberatung. Quellen: Yahoo Finance, bei US-Werten SEC.</p>
+            <p className="text-xs text-muted">{OVERALL[r.overall]}. Mechanische Auswertung, keine Anlageberatung. Quellen: {r.sources.join(", ")}.</p>
             <Link href={`/kauf?buy=${encodeURIComponent(r.symbol)}&name=${encodeURIComponent(r.name)}`} className="btn-secondary">
               Als Kauf erfassen
             </Link>
