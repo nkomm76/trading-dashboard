@@ -8,7 +8,6 @@ export type EpsPoint = { date: string; eps: number };
 export type PeFairValue = {
   value: number; // heutiger fairer Wert je Aktie (Handelswährung)
   eps: number; // Gewinn je Aktie, auf dem der heutige Wert beruht
-  epsBasis: string;
   pe: number; // Ø-KGV
   minPe: number;
   maxPe: number;
@@ -27,40 +26,54 @@ const YEAR_MS = 365.25 * DAY;
 const MAX_PE = 100; // darüber ist der Gewinn so klein, dass das KGV nichts mehr aussagt
 
 /**
- * Gewinn je Aktie zum Zeitpunkt t: zwischen Stichtagen weich (monotone kubische Interpolation, ohne Überschwinger),
- * nach dem letzten der letzte, vor dem ersten keiner.
+ * Gewinn je Aktie als Funktion der Zeit: zwischen Stichtagen weich (monotone kubische Interpolation, ohne Überschwinger),
+ * nach dem letzten der letzte, vor dem ersten keiner. Stützstellen und Steigungen werden einmal vorberechnet,
+ * weil die Kurve im Chart für jeden Kurspunkt ausgewertet wird.
  */
-export function epsAt(points: EpsPoint[], t: number): number | undefined {
-  if (!points.length) return undefined;
-  const x = points.map((p) => Date.parse(p.date));
-  if (t < x[0]) return undefined;
+export function epsCurve(points: EpsPoint[]): (t: number) => number | undefined {
   const n = points.length;
-  if (t >= x[n - 1]) return points[n - 1].eps;
-  let i = 0;
-  while (x[i + 1] <= t) i++;
+  const x = points.map((p) => Date.parse(p.date));
   const y = points.map((p) => p.eps);
   const slope = (k: number) => (y[k + 1] - y[k]) / (x[k + 1] - x[k]);
   // Steigung an einem Stützpunkt: 0 bei Richtungswechsel, sonst harmonisches Mittel (Fritsch–Carlson)
-  const tangent = (k: number) => {
+  const m = x.map((_, k) => {
+    if (n < 2) return 0;
     if (k === 0) return slope(0);
     if (k === n - 1) return slope(n - 2);
     const a = slope(k - 1);
     const b = slope(k);
     return a * b <= 0 ? 0 : (2 * a * b) / (a + b);
+  });
+  return (t) => {
+    if (!n || t < x[0]) return undefined;
+    if (t >= x[n - 1]) return y[n - 1];
+    let lo = 0;
+    let hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (x[mid] <= t) lo = mid;
+      else hi = mid;
+    }
+    const h = x[hi] - x[lo];
+    const s = (t - x[lo]) / h;
+    const h00 = (1 + 2 * s) * (1 - s) ** 2;
+    const h10 = s * (1 - s) ** 2;
+    const h01 = s * s * (3 - 2 * s);
+    const h11 = s * s * (s - 1);
+    return h00 * y[lo] + h10 * h * m[lo] + h01 * y[hi] + h11 * h * m[hi];
   };
-  const h = x[i + 1] - x[i];
-  const s = (t - x[i]) / h;
-  const h00 = (1 + 2 * s) * (1 - s) ** 2;
-  const h10 = s * (1 - s) ** 2;
-  const h01 = s * s * (3 - 2 * s);
-  const h11 = s * s * (s - 1);
-  return h00 * y[i] + h10 * h * tangent(i) + h01 * y[i + 1] + h11 * h * tangent(i + 1);
 }
 
-/** Fairer Wert zum Zeitpunkt t (Gewinn × KGV); bei Verlust keiner. */
-export function fairAt(points: EpsPoint[], pe: number, t: number): number | undefined {
-  const e = epsAt(points, t);
-  return e !== undefined && e > 0 ? e * pe : undefined;
+/** Gewinn je Aktie zum Zeitpunkt t (für einzelne Abfragen; für viele Zeitpunkte `epsCurve` verwenden). */
+export const epsAt = (points: EpsPoint[], t: number) => epsCurve(points)(t);
+
+/** Fairer Wert als Funktion der Zeit (Gewinn × KGV); bei Verlust keiner. */
+export function fairCurve(points: EpsPoint[], pe: number): (t: number) => number | undefined {
+  const eps = epsCurve(points);
+  return (t) => {
+    const e = eps(t);
+    return e !== undefined && e > 0 ? e * pe : undefined;
+  };
 }
 
 /**
@@ -78,13 +91,14 @@ export function epsSeries(annual: StatementRow[], ttm?: EpsPoint, years = 3): Ep
   const last = raw.at(-1);
   if (ttm && (!last || (Date.parse(ttm.date) - Date.parse(last.date) > 45 * DAY && plausible(ttm.eps, last.eps)))) {
     // Die 12 Monate überschneiden sich mit dem letzten Geschäftsjahr: nur ältere Jahre dazunehmen
-    const before = raw.filter((p) => Date.parse(p.date) <= Date.parse(ttm.date) - 300 * DAY).slice(-(years - 1));
+    const before = raw.filter((p) => Date.parse(p.date) <= Date.parse(ttm.date) - 300 * DAY).slice(years > 1 ? -(years - 1) : raw.length);
     points.push({ date: ttm.date, eps: mean([...before, ttm]) });
   }
   return points;
 }
 
-const plausible = (a: number, b: number) => a > 0 && b > 0 && a / b <= 3 && b / a <= 3;
+// Nur zwei Gewinne lassen sich ins Verhältnis setzen; nach einem Verlustjahr ist ein neues 12-Monats-EPS immer willkommen
+const plausible = (a: number, b: number) => a <= 0 || b <= 0 || (a / b <= 3 && b / a <= 3);
 
 /** Ø-KGV aus Monatsschlusskursen der letzten `years` Jahre; heutiger fairer Wert = aktueller Gewinn × Ø-KGV. */
 export function fairValueByPe(
@@ -96,11 +110,15 @@ export function fairValueByPe(
 ): PeFairResult {
   if (points.length < 2) return { unavailable: "Zu wenige Jahre mit Gewinn je Aktie in den Quellen" };
   const end = Date.parse(asOf);
+  const eps = epsCurve(points);
   const pes: { date: string; pe: number }[] = [];
+  // Monate im Zeitraum, für die es schon Gewinnzahlen gibt (davor fehlen nur Daten, das ist kein Verlust)
+  let covered = 0;
   for (const c of closes ?? []) {
     const t = Date.parse(c.date);
     if (t > end || t < end - years * YEAR_MS || c.close <= 0) continue;
-    const e = epsAt(points, t);
+    const e = eps(t);
+    if (e !== undefined) covered++;
     if (e === undefined || e <= 0) continue;
     const pe = c.close / e;
     if (pe <= MAX_PE) pes.push({ date: c.date, pe });
@@ -113,15 +131,11 @@ export function fairValueByPe(
   const value = current.eps * pe;
   const notes: string[] = [];
   if (pes.length < 54) notes.push(`nur ${(pes.length / 12).toFixed(1).replace(".", ",")} Jahre für das Ø-KGV`);
-  const skipped = (closes ?? []).filter((c) => {
-    const t = Date.parse(c.date);
-    return t <= end && t >= end - years * YEAR_MS;
-  }).length - pes.length;
+  const skipped = covered - pes.length;
   if (skipped > 6) notes.push(`${skipped} Monate ohne Gewinn oder mit KGV über ${MAX_PE} nicht berücksichtigt`);
   return {
     value,
     eps: current.eps,
-    epsBasis: "",
     pe,
     minPe: Math.min(...pes.map((x) => x.pe)),
     maxPe: Math.max(...pes.map((x) => x.pe)),

@@ -51,11 +51,22 @@ describe("extendHistory", () => {
     const r = extendHistory(base, [y(2020, 85), y(2023, 125)]);
     expect(r.addedYears).toEqual([]);
     expect(r.rejected).toContain("Umsatz 2023");
-    expect(r.rows).toBe(base);
+    expect(r.rows).toEqual(base);
   });
 
   it("verwirft bei abweichendem Cashflow und ohne gemeinsame Jahre", () => {
     expect(extendHistory(base, [y(2020, 85, 10), y(2024, 121, 30)]).rejected).toContain("Cashflow 2024");
     expect(extendHistory(base, [y(2018, 70)]).rejected).toContain("keine gemeinsamen Jahre");
+  });
+});
+
+describe("extendHistory mit leeren Zeilen", () => {
+  it("zählt leere Jahreszeilen der Hauptquelle nicht als Jahr", () => {
+    // Yahoo: 2021 ohne Werte, 2022–2025 mit Werten → Platz für 2 ältere Jahre (2020, 2021)
+    const yahoo = [{ date: "2021-12-31" }, ...[2022, 2023, 2024, 2025].map((yr) => ({ date: `${yr}-12-31`, totalRevenue: 100, operatingCashFlow: 10 }))];
+    const older = [2019, 2020, 2021, 2022].map((yr) => ({ date: `${yr}-12-31`, totalRevenue: 100, operatingCashFlow: 10 }));
+    const r = extendHistory(yahoo, older);
+    expect(r.addedYears).toEqual([2020, 2021]);
+    expect(r.rows).toHaveLength(6);
   });
 });

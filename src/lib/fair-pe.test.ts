@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { epsAt, epsSeries, fairAt, fairValueByPe } from "./fair-pe";
+import { epsAt, epsSeries, fairCurve, fairValueByPe } from "./fair-pe";
 
 const monthly = (from: string, n: number, price: (i: number) => number) =>
   Array.from({ length: n }, (_, i) => {
@@ -37,7 +37,7 @@ describe("epsAt", () => {
   });
 
   it("kein fairer Wert bei Verlust", () => {
-    expect(fairAt([{ date: "2020-12-31", eps: -1 }], 20, Date.parse("2021-01-01"))).toBeUndefined();
+    expect(fairCurve([{ date: "2020-12-31", eps: -1 }], 20)(Date.parse("2021-01-01"))).toBeUndefined();
   });
 });
 
@@ -61,6 +61,14 @@ describe("epsSeries", () => {
     expect(epsSeries(annual, { date: "2025-06-30", eps: 50 })).toHaveLength(3);
     expect(epsSeries(annual, { date: "2025-01-15", eps: 6.1 })).toHaveLength(3);
   });
+  it("nimmt nach einem Verlustjahr das neue 12-Monats-EPS", () => {
+    const loss = [
+      { date: "2023-12-31", dilutedEPS: 2 },
+      { date: "2024-12-31", dilutedEPS: -1 },
+    ];
+    expect(epsSeries(loss, { date: "2025-06-30", eps: 1.5 }, 1).at(-1)).toEqual({ date: "2025-06-30", eps: 1.5 });
+  });
+
   it("ohne Glättung die Rohwerte", () => {
     expect(epsSeries(annual, undefined, 1).map((p) => p.eps)).toEqual([3, 3, 6]);
   });
@@ -77,6 +85,15 @@ describe("fairValueByPe", () => {
     expect(f.pe).toBeCloseTo(20);
     expect(f.value).toBeCloseTo(60);
     expect(f.deviation).toBeCloseTo(-0.25);
+  });
+
+  it("zählt Monate ohne Gewinndaten nicht als Verlustmonate", () => {
+    // Gewinnreihe erst ab Ende 2021: die Monate davor fehlen, sind aber kein Verlust
+    const late = pts.filter((p) => p.date >= "2021");
+    const f = fairValueByPe(late, closes, 45, "2025-11-15");
+    if ("unavailable" in f) throw new Error(f.unavailable);
+    expect(f.notes.some((n) => n.includes("ohne Gewinn"))).toBe(false);
+    expect(f.notes.some((n) => n.includes("Jahre für das Ø-KGV"))).toBe(true);
   });
 
   it("kein Wert bei zu kurzer Historie oder aktuellem Verlust", () => {

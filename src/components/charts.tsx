@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { valueAt, type TimeValue } from "@/lib/ema";
-import { fairAt, type EpsPoint } from "@/lib/fair-pe";
+import { fairCurve, type EpsPoint } from "@/lib/fair-pe";
 
 const nf = (d = 2) => (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: d }) : "–");
 const compact = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 }) : "–");
@@ -131,6 +131,8 @@ export function PriceChart({ symbol, currency, fair }: { symbol: string; currenc
   const [emaLines, setEmaLines] = useState<{ symbol: string } & Record<EmaKey, TimeValue[]>>();
   const [emaOn, setEmaOn] = useState<Record<EmaKey, boolean>>({ ema200d: true, ema20w: true });
   const [fairOn, setFairOn] = useState(true);
+  // Kurve einmal je Gewinnreihe aufbauen – sie wird für jeden Kurspunkt ausgewertet
+  const fairFn = useMemo(() => (fair ? fairCurve(fair.points, fair.pe) : undefined), [fair?.points, fair?.pe]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = `${symbol}|${range}`;
 
   useEffect(() => {
@@ -213,13 +215,14 @@ export function PriceChart({ symbol, currency, fair }: { symbol: string; currenc
   const lines = emaLines?.symbol === symbol && !intraday ? EMAS.filter((e) => emaLines[e.key].length) : [];
   // Fairer Wert: Kurve nur bei Tages- und Wochenkursen, die Bewertung oben rechts immer
   const showFair = !!fair && fairOn && !intraday;
+  const fairOf = fairFn;
   const rows = points?.map((p) => ({
     ...p,
     ...Object.fromEntries(lines.filter((e) => emaOn[e.key]).map((e) => [e.key, valueAt(emaLines![e.key], p.time)])),
-    ...(showFair ? { fair: fairAt(fair.points, fair.pe, p.time) } : {}),
+    ...(showFair && fairOf ? { fair: fairOf(p.time) } : {}),
   }));
   const lastRow = rows?.[rows.length - 1] as Record<string, number | undefined> | undefined;
-  const fairNow = fair && points?.length ? fairAt(fair.points, fair.pe, points[points.length - 1].time) : undefined;
+  const fairNow = fairOf && points?.length ? fairOf(points[points.length - 1].time) : undefined;
   const valuation = fairNow && last ? last / fairNow - 1 : undefined;
   // Achse: Kurs, Durchschnitte und fairer Wert; die Stufen nur, soweit sie den Verlauf nicht plattdrücken
   const closes = points?.map((p) => p.close) ?? [];

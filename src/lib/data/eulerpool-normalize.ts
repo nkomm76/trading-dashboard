@@ -47,7 +47,12 @@ const deviates = (a: number | undefined, b: number | undefined, tolerance: numbe
  * sonst bleibt es bei der Hauptquelle. Jüngere Jahre der Hauptquelle werden nie ersetzt.
  * `compare` schränkt den Abgleich ein, z. B. nur Cashflow, wenn der Umsatz rückwirkend geändert wurde (Abspaltungen).
  */
-export function extendHistory(base: StatementRow[], extra: StatementRow[], window = 6, compare: ("revenue" | "cashflow")[] = ["revenue", "cashflow"]): Extension {
+/** Zeile mit mindestens einem Wert – Yahoo liefert für ältere Jahre teils leere Zeilen. */
+const hasData = (r: StatementRow) => Object.entries(r).some(([k, v]) => k !== "date" && typeof v === "number");
+
+export function extendHistory(allBase: StatementRow[], extra: StatementRow[], window = 6, compare: ("revenue" | "cashflow")[] = ["revenue", "cashflow"]): Extension {
+  // Leere Zeilen zählen nicht als Jahr, sonst bleibt zu wenig Platz für ältere Jahre
+  const base = allBase.filter(hasData);
   if (!extra.length) return { rows: base, addedYears: [] };
   const baseYears = new Map(base.map((r) => [fiscalYear(r.date), r]));
   const overlap = extra.filter((e) => baseYears.has(fiscalYear(e.date)));

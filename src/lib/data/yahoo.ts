@@ -103,13 +103,17 @@ const RANGES: Record<ChartRange, { days: number; interval: "5m" | "30m" | "1d" |
 
 type TimedPoint = PricePoint & { time: number };
 
-/** Tageskerzen enden oft am Vortag: aktuellen Kurs als letzten Punkt anhängen. */
-function appendLatest(points: TimedPoint[], meta: { regularMarketPrice?: number; regularMarketTime?: Date }) {
+/**
+ * Tageskerzen enden oft am Vortag: aktuellen Kurs als letzten Punkt anhängen.
+ * Bei Tageskerzen, die den heutigen Tag schon enthalten, nur deren Schlusskurs aktualisieren – sonst zählt heute doppelt.
+ */
+function appendLatest(points: TimedPoint[], meta: { regularMarketPrice?: number; regularMarketTime?: Date }, daily = false) {
   const { regularMarketPrice: lastPrice, regularMarketTime: lastTime } = meta;
-  if (typeof lastPrice === "number" && lastTime) {
-    const t = new Date(lastTime).getTime();
-    if (!points.length || t > points[points.length - 1].time) points.push({ date: new Date(t).toISOString(), time: t, close: lastPrice });
-  }
+  if (typeof lastPrice !== "number" || !lastTime) return;
+  const t = new Date(lastTime).getTime();
+  const prev = points[points.length - 1];
+  if (prev && daily && day(prev.time) === day(t)) prev.close = lastPrice;
+  else if (!prev || t > prev.time) points.push({ date: new Date(t).toISOString(), time: t, close: lastPrice });
 }
 
 export async function fetchPriceHistory(symbol: string, range: ChartRange): Promise<{ currency?: string; points: (PricePoint & { time: number })[] }> {
@@ -119,7 +123,7 @@ export async function fetchPriceHistory(symbol: string, range: ChartRange): Prom
   let points = chart.quotes
     .filter((q) => typeof q.close === "number")
     .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
-  appendLatest(points, chart.meta);
+  appendLatest(points, chart.meta, interval === "1d");
   if (range === "1d" && points.length) {
     const tz = chart.meta.exchangeTimezoneName;
     const localDay = (t: number) => new Date(t).toLocaleDateString("en-CA", { timeZone: tz });
@@ -137,7 +141,7 @@ export async function fetchCloses(symbol: string, from: Date, interval: "1d" | "
     .filter((q) => typeof q.close === "number")
     .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
   // Die letzte Wochenkerze enthält den aktuellen Kurs schon
-  if (interval === "1d") appendLatest(points, chart.meta);
+  if (interval === "1d") appendLatest(points, chart.meta, true);
   return points;
 }
 

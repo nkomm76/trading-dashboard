@@ -4,7 +4,6 @@ import { convert, fetchEcbRates } from "./data/fx";
 import { fetchEulerpoolAnnual } from "./data/eulerpool";
 import { extendHistory, type Extension } from "./data/eulerpool-normalize";
 import { fetchSecAnnual, fetchSecQuarterly, lookupCik } from "./data/sec";
-import { fcfOf } from "./metrics";
 import { mergeRows, samePeriod } from "./refresh";
 import { fetchMarketData, searchStocks, type SearchHit } from "./data/yahoo";
 import type { StatementRow } from "./data/types";
@@ -20,6 +19,16 @@ function pickListing(query: string, hits: SearchHit[]): SearchHit | undefined {
 }
 
 export type CheckResponse = { result?: CheckResult; listings: SearchHit[]; error?: string; isin?: string; watched?: boolean };
+
+// Letzte Ergebnisse je Symbol, damit „Zur Watchliste“ den Check nicht wiederholen muss (nur im Speicher dieses Servers)
+const CACHE_MS = 15 * 60_000;
+const recent = new Map<string, { at: number; res: CheckResponse }>();
+
+/** Ergebnis eines Aktien Checks der letzten 15 Minuten für dieses Symbol, sonst nichts. */
+export function recentCheck(symbol: string): CheckResponse | undefined {
+  const hit = recent.get(symbol);
+  return hit && Date.now() - hit.at < CACHE_MS ? hit.res : undefined;
+}
 
 export async function runCheck(query: string, symbol?: string): Promise<CheckResponse> {
   const q = query.trim().toUpperCase();
@@ -79,9 +88,8 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   // REITs: Eulerpool zieht Immobilienkäufe vom Free Cashflow ab – für den DCF nicht vergleichbar
   // US-Werte: ältere Free-Cashflow-Jahre aus SEC-Berichten, damit das Wachstum aus 3 gegen 3 Jahren entsteht
   const secFcf = secAnnual.filter((r) => r.operatingCashFlow !== undefined && r.capitalExpenditure !== undefined);
-  // Leere Jahreszeilen von Yahoo nicht mitzählen; Umsätze werden nach Abspaltungen rückwirkend geändert, daher nur Cashflow abgleichen
-  const yahooFcf = market.annual.filter((r) => fcfOf(r) !== undefined);
-  const dcfBase = secFcf.length ? extendHistory(yahooFcf, secFcf, 6, ["cashflow"]) : undefined;
+  // Umsätze werden nach Abspaltungen rückwirkend geändert, daher nur den Cashflow abgleichen
+  const dcfBase = secFcf.length ? extendHistory(market.annual, secFcf, 6, ["cashflow"]) : undefined;
   if (dcfBase?.addedYears.length && !sources.includes("SEC")) sources.push("SEC");
   const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(dcfBase?.rows ?? market.annual, ep);
   if (growthExt.addedYears.length || dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
@@ -97,5 +105,8 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
     dcf: (await getThresholds()).dcf,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
-  return { result, listings, isin };
+  const res = { result, listings, isin };
+  recent.set(result.symbol, { at: Date.now(), res });
+  for (const [k, v] of recent) if (Date.now() - v.at >= CACHE_MS) recent.delete(k);
+  return res;
 }

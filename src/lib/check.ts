@@ -1,5 +1,5 @@
 import type { DividendPayment, MarketData, PricePoint, StatementRow } from "./data/types";
-import { epsSeries, fairValueByPe, type PeFairResult } from "./fair-pe";
+import { epsSeries, fairValueByPe, type PeFairValue } from "./fair-pe";
 import { annualTotals, computeMetrics, detectDividendCut, detectFrequency, fcfOf } from "./metrics";
 import { DEFAULT_THRESHOLDS, type DcfAssumptions, type LightColor } from "./rating";
 
@@ -29,7 +29,7 @@ export type CheckResult = {
   fairValue?: FairValue;
   dcf?: DcfResult;
   /** Fairer Wert nach Ø-KGV, mit Gewinnreihe für die Kurve im Kurschart */
-  peFair: PeFairResult;
+  peFair: PeFair;
   /** Dividende je Aktie der letzten 10 abgeschlossenen Kalenderjahre */
   dividendsByYear: { year: number; total: number }[];
   /** Datenquellen dieses Checks für den Hinweis unten */
@@ -208,19 +208,27 @@ export function fairValueByYield(
   if (!exp || !closes?.length || !divs.length) return undefined;
   const end = Date.parse(asOf);
   const firstDiv = Date.parse(divs[0].date);
-  // Verschiebt sich der Ex-Tag um ein paar Tage nach vorn, fallen zwei Jahresdividenden (bzw. 5 Quartale)
-  // in dasselbe 12-Monats-Fenster; deshalb höchstens so viele Zahlungen wie der Rhythmus vorsieht
-  const perYear = PER_YEAR[detectFrequency(divs, asOf) ?? "unregelmäßig"];
+  const DAY = 86_400_000;
+  // Zahlungen je Jahr zum Zeitpunkt t aus dem üblichen Abstand der Zahlungen in den 2 Jahren davor (Rhythmuswechsel möglich)
+  const localPerYear = (t: number) => {
+    const recent = divs.map((d) => Date.parse(d.date)).filter((dt) => dt <= t && dt > t - 2 * YEAR_MS);
+    const gaps = recent.slice(1).map((dt, i) => dt - recent[i]).sort((a, b) => a - b);
+    return gaps.length ? Math.max(1, Math.round(YEAR_MS / gaps[Math.floor(gaps.length / 2)])) : undefined;
+  };
   const yields: { date: string; y: number }[] = [];
   for (const c of closes) {
     const t = Date.parse(c.date);
     // Nur Monate, für die eine volle 12-Monats-Dividendenhistorie vorliegt
-    if (t > end || t < end - 5 * YEAR_MS || t - YEAR_MS < firstDiv - 31 * 86_400_000 || c.close <= 0) continue;
-    const inWindow = divs.filter((d) => {
+    if (t > end || t < end - 5 * YEAR_MS || t - YEAR_MS < firstDiv - 31 * DAY || c.close <= 0) continue;
+    let inWindow = divs.filter((d) => {
       const dt = Date.parse(d.date);
       return dt <= t && dt > t - YEAR_MS;
     });
-    const ttm = (perYear ? inWindow.slice(-perYear) : inWindow).reduce((a, d) => a + d.amount, 0);
+    // Rückt der Ex-Tag ein paar Tage nach vorn, liegt die Vorjahreszahlung noch am Anfang des Fensters und zählte doppelt.
+    // Nur solche Randzahlungen entfernen – Sonderdividenden mitten im Jahr bleiben.
+    const perYear = localPerYear(t);
+    while (perYear && inWindow.length > perYear && Date.parse(inWindow[0].date) < t - YEAR_MS + 45 * DAY) inWindow = inWindow.slice(1);
+    const ttm = inWindow.reduce((a, d) => a + d.amount, 0);
     if (ttm > 0) yields.push({ date: c.date, y: ttm / c.close });
   }
   // Mindestens 3 Jahre Monatswerte, sonst ist der Mittelwert nicht belastbar
@@ -393,6 +401,9 @@ export function recentFundamentals(rows: StatementRow[], asOf: string): Fundamen
     .filter((r) => r.eps !== null || r.fcf !== null);
 }
 
+/** Fairer Wert nach Ø-KGV mit Erklärung, worauf der heutige Gewinn je Aktie beruht. */
+export type PeFair = (PeFairValue & { epsBasis: string }) | { unavailable: string };
+
 /** Fairer Wert nach Ø-KGV der letzten 5 Jahre; Gewinne in die Handelswährung umgerechnet. */
 function peFairValue(
   market: MarketData,
@@ -400,7 +411,7 @@ function peFairValue(
   asOf: string,
   toTradingCurrency?: (v: number) => number | undefined,
   history?: { annual: StatementRow[]; note?: string },
-): PeFairResult {
+): PeFair {
   const sameCurrency = !market.financialCurrency || market.financialCurrency === market.currency;
   const rate = sameCurrency ? 1 : toTradingCurrency?.(1);
   if (!rate) return { unavailable: "Wechselkurs für die Bilanzwährung fehlt" };

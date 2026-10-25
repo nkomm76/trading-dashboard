@@ -1,26 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
-import { removeWatch, runWatchRefresh, type FormState } from "@/app/actions";
+import { useState } from "react";
+import { removeWatch } from "@/app/actions";
 import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import type { WatchRow } from "@/lib/watchlist-server";
 import { PriceChart } from "./charts";
 import { Light } from "./light";
-
-function RefreshWatchButton() {
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<FormState>();
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <button className="btn-secondary" disabled={pending} onClick={() => start(async () => setMsg(await runWatchRefresh()))}>
-        {pending ? "Aktualisiere …" : "Aktualisieren"}
-      </button>
-      {msg?.ok && <span className="text-xs text-light-green">{msg.ok}</span>}
-      {msg?.error && <span className="max-w-md text-right text-xs text-light-red">{msg.error}</span>}
-    </div>
-  );
-}
+import { RefreshButton } from "./refresh-button";
 
 export function Watchlist({ rows }: { rows: WatchRow[] }) {
   const [selected, setSelected] = useState(rows[0]?.symbol);
@@ -41,7 +28,7 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
             aufnehmen. Ampel nach den Kriterien des Aktien Checks.
           </p>
         </div>
-        {rows.length > 0 && <RefreshWatchButton />}
+        {rows.length > 0 && <RefreshButton target="watchlist" />}
       </div>
 
       {rows.length === 0 ? (

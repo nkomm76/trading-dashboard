@@ -112,6 +112,26 @@ describe("fairValueByYield", () => {
     expect(f.value).toBeCloseTo(50);
   });
 
+  it("zählt nach einem Wechsel von Quartals- auf Jahreszahlung frühere Quartale voll", () => {
+    // Bis 2023 vier Zahlungen à 0,50, ab 2024 eine Jahreszahlung von 2, Kurs 50
+    const switched = [
+      ...[2019, 2020, 2021, 2022, 2023].flatMap((y) => ["02", "05", "08", "11"].map((m) => ({ date: `${y}-${m}-15`, amount: 0.5 }))),
+      { date: "2024-11-15", amount: 2 },
+      { date: "2025-11-14", amount: 2 },
+    ];
+    const f = fairValueByYield(switched, closes(() => 50), 50, "2026-10-01")!;
+    // Quartalsjahre mit 4 %, nur im Umstellungsjahr weniger; früher galt der heutige Rhythmus (1 Zahlung) für alle Jahre
+    expect(f.maxYield).toBeCloseTo(0.04);
+    expect(f.avgYield).toBeGreaterThan(0.033);
+  });
+
+  it("behält eine Sonderdividende mitten im Jahr", () => {
+    const special = [...divs, { date: "2023-03-20", amount: 1 }].sort((x, y) => x.date.localeCompare(y.date));
+    const f = fairValueByYield(special, closes(() => 50), 50, "2026-10-01")!;
+    // In den 12 Monaten nach der Sonderzahlung 3 statt 2 je Aktie → 6 %
+    expect(f.maxYield).toBeCloseTo(0.06);
+  });
+
   it("kein Wert bei zu kurzer Historie oder ohne aktuelle Dividende", () => {
     expect(fairValueByYield(divs.filter((d) => d.date >= "2024-06"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
     expect(fairValueByYield(divs.filter((d) => d.date < "2024"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
