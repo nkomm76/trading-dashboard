@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { valueAt, type TimeValue } from "@/lib/ema";
 
 const nf = (d = 2) => (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: d }) : "–");
 const compact = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 }) : "–");
@@ -110,13 +111,33 @@ type PricePoint = { time: number; close: number };
 
 export type FairLine = { label: string; value: number; color: string };
 
+// Gleitende Durchschnitte: EMA 200 aus Tageskursen, EMA 20 aus Wochenkursen
+const EMAS = [
+  { key: "ema200d", label: "EMA 200 Tage", short: "EMA 200", color: "var(--ema-long)" },
+  { key: "ema20w", label: "EMA 20 Wochen", short: "EMA 20 W", color: "var(--ema-short)" },
+] as const;
+type EmaKey = (typeof EMAS)[number]["key"];
+
 export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: string; currency: string; fairLines?: FairLine[] }) {
   const [range, setRange] = useState<Range>("1y");
   const [data, setData] = useState<{ key: string; points: PricePoint[] }>();
   // Zoom: per Maus aufgezogener Ausschnitt; feinere Kurse werden nachgeladen
   const [zoom, setZoom] = useState<{ from: number; to: number; points?: PricePoint[] }>();
   const [drag, setDrag] = useState<{ start?: number; end?: number }>();
+  const [emaLines, setEmaLines] = useState<{ symbol: string } & Record<EmaKey, TimeValue[]>>();
+  const [emaOn, setEmaOn] = useState<Record<EmaKey, boolean>>({ ema200d: true, ema20w: true });
   const key = `${symbol}|${range}`;
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/ema?symbol=${encodeURIComponent(symbol)}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}))
+      .then((d: Partial<Record<EmaKey, TimeValue[]>>) => active && setEmaLines({ symbol, ema200d: d.ema200d ?? [], ema20w: d.ema20w ?? [] }));
+    return () => {
+      active = false;
+    };
+  }, [symbol]);
 
   useEffect(() => {
     let active = true;
@@ -183,10 +204,15 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
   const fmtFull = (t: unknown) =>
     typeof t === "number" ? new Date(t).toLocaleString("de-DE", intraday ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
   const money = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ` ${currency}` : "–");
+  // Durchschnitte nur bei Tages- und Wochenkursen; intraday wären sie eine flache Linie
+  const lines = emaLines?.symbol === symbol && !intraday ? EMAS.filter((e) => emaLines[e.key].length) : [];
+  const rows = points?.map((p) => ({ ...p, ...Object.fromEntries(lines.filter((e) => emaOn[e.key]).map((e) => [e.key, valueAt(emaLines![e.key], p.time)])) }));
+  const lastRow = rows?.[rows.length - 1] as Record<string, number | undefined> | undefined;
   // Faire Werte einblenden und die Achse erweitern; nur extreme Ausreißer weglassen, die den Verlauf plattdrücken würden
   const closes = points?.map((p) => p.close) ?? [];
-  const lo = Math.min(...closes);
-  const hi = Math.max(...closes);
+  const emaValues = (rows ?? []).flatMap((r) => lines.map((e) => (r as Record<string, number | undefined>)[e.key]).filter((v): v is number => v !== undefined));
+  const lo = Math.min(...closes, ...emaValues);
+  const hi = Math.max(...closes, ...emaValues);
   const shown = closes.length ? fairLines.filter((f) => f.value > lo * 0.5 && f.value < hi * 2) : [];
   const hidden = closes.length ? fairLines.filter((f) => !shown.includes(f)) : [];
   const yLo = Math.min(lo, ...shown.map((f) => f.value));
@@ -222,6 +248,27 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
           </span>
         )}
       </div>
+      {lines.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {lines.map((e) => {
+            const v = lastRow?.[e.key];
+            return (
+              <label key={e.key} className="flex cursor-pointer items-center gap-1.5 text-muted">
+                <input type="checkbox" checked={emaOn[e.key]} onChange={() => setEmaOn({ ...emaOn, [e.key]: !emaOn[e.key] })} className="accent-accent" />
+                <span className="inline-block w-4 border-t-2" style={{ borderColor: e.color }} />
+                {e.label}
+                {emaOn[e.key] && v !== undefined && last !== undefined && (
+                  <span className="tabular">
+                    {" "}
+                    {nf(2)(v)} · Kurs {last >= v ? "+" : ""}
+                    {((last / v - 1) * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      )}
       {/* Aufziehen über eigene Mausereignisse: unabhängig von der Drosselung im Chart */}
       <div
         ref={boxRef}
@@ -237,7 +284,7 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
           <p className="pt-24 text-center text-sm text-muted">Für diesen Zeitraum liefert die Quelle keine Kurse.</p>
         ) : (
           <ResponsiveContainer>
-            <AreaChart data={points}>
+            <ComposedChart data={rows}>
               <defs>
                 <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={color} stopOpacity={0.25} />
@@ -247,13 +294,18 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={fmtTick} tick={{ fontSize: 11, fill: "var(--muted)" }} minTickGap={40} />
               <YAxis
-                domain={shown.length ? [yLo * 0.97, yHi * 1.03] : ["auto", "auto"]}
+                domain={shown.length || lines.length ? [yLo * 0.97, yHi * 1.03] : ["auto", "auto"]}
                 tick={{ fontSize: 12, fill: "var(--muted)" }}
                 tickFormatter={nf(2)}
                 width={52}
               />
-              <Tooltip contentStyle={tooltipStyle} labelFormatter={fmtFull} formatter={(v) => [money(v), "Kurs"]} />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={fmtFull} formatter={(v, name) => [money(v), name === "close" ? "Kurs" : (EMAS.find((e) => e.key === name)?.short ?? name)]} />
               <Area type="monotone" dataKey="close" stroke={color} strokeWidth={2} fill="url(#priceFill)" dot={false} isAnimationActive={false} />
+              {lines
+                .filter((e) => emaOn[e.key])
+                .map((e) => (
+                  <Line key={e.key} type="monotone" dataKey={e.key} stroke={e.color} strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={false} />
+                ))}
               {shown.map((f, i) => (
                 <ReferenceLine
                   key={f.label}
@@ -264,12 +316,12 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
                 />
               ))}
               {drag?.start !== undefined && drag.end !== undefined && <ReferenceArea x1={drag.start} x2={drag.end} fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.4} />}
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
       <p className="mt-1 text-xs text-muted">
-        Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert" : ""}.
+        Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert; gleitende Durchschnitte ab 6 Monaten" : ""}.
         {hidden.length > 0 && ` ${hidden.map((f) => f.label).join(" und ")} außerhalb des dargestellten Kursbereichs.`}
       </p>
     </div>

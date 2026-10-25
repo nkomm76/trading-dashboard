@@ -11,6 +11,8 @@
   --orange: #d98a00;
   --red: #c8352b;
   --grey: #9aa1ad;
+  --ema-long: #7c4dcc;
+  --ema-short: #0891b2;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +27,8 @@
     --orange: #f2b33d;
     --red: #ff6b5f;
     --grey: #6b7280;
+    --ema-long: #b48cff;
+    --ema-short: #22d3ee;
   }
 }
 

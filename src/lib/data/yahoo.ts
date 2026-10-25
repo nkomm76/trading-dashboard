@@ -101,6 +101,17 @@ const RANGES: Record<ChartRange, { days: number; interval: "5m" | "30m" | "1d" |
   "5y": { days: 5 * 365 + 2, interval: "1wk" },
 };
 
+type TimedPoint = PricePoint & { time: number };
+
+/** Tageskerzen enden oft am Vortag: aktuellen Kurs als letzten Punkt anhängen. */
+function appendLatest(points: TimedPoint[], meta: { regularMarketPrice?: number; regularMarketTime?: Date }) {
+  const { regularMarketPrice: lastPrice, regularMarketTime: lastTime } = meta;
+  if (typeof lastPrice === "number" && lastTime) {
+    const t = new Date(lastTime).getTime();
+    if (!points.length || t > points[points.length - 1].time) points.push({ date: new Date(t).toISOString(), time: t, close: lastPrice });
+  }
+}
+
 export async function fetchPriceHistory(symbol: string, range: ChartRange): Promise<{ currency?: string; points: (PricePoint & { time: number })[] }> {
   const { days, interval } = RANGES[range];
   // Nur reguläre Handelszeit, ohne vor- und nachbörslichen Handel
@@ -108,12 +119,7 @@ export async function fetchPriceHistory(symbol: string, range: ChartRange): Prom
   let points = chart.quotes
     .filter((q) => typeof q.close === "number")
     .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
-  // Tageskerzen enden oft am Vortag: aktuellen Kurs als letzten Punkt anhängen
-  const { regularMarketPrice: lastPrice, regularMarketTime: lastTime } = chart.meta;
-  if (typeof lastPrice === "number" && lastTime) {
-    const t = new Date(lastTime).getTime();
-    if (!points.length || t > points[points.length - 1].time) points.push({ date: new Date(t).toISOString(), time: t, close: lastPrice });
-  }
+  appendLatest(points, chart.meta);
   if (range === "1d" && points.length) {
     const tz = chart.meta.exchangeTimezoneName;
     const localDay = (t: number) => new Date(t).toLocaleDateString("en-CA", { timeZone: tz });
@@ -124,6 +130,17 @@ export async function fetchPriceHistory(symbol: string, range: ChartRange): Prom
 }
 
 /** Tagesschlusskurse, dividendenbereinigt (adjclose), ab dem angegebenen Datum. */
+/** Schlusskurse wie im Kurschart (nicht dividendenbereinigt) für gleitende Durchschnitte; täglich inkl. aktuellem Kurs. */
+export async function fetchCloses(symbol: string, from: Date, interval: "1d" | "1wk"): Promise<TimedPoint[]> {
+  const chart = await yf.chart(symbol, { period1: from, interval, includePrePost: false });
+  const points = chart.quotes
+    .filter((q) => typeof q.close === "number")
+    .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
+  // Die letzte Wochenkerze enthält den aktuellen Kurs schon
+  if (interval === "1d") appendLatest(points, chart.meta);
+  return points;
+}
+
 export async function fetchAdjustedDaily(symbol: string, from: Date): Promise<PricePoint[]> {
   const chart = await yf.chart(symbol, { period1: from, interval: "1d" });
   return chart.quotes

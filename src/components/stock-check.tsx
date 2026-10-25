@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, useRef } from "react";
+import { startTransition, useActionState, useRef, useState, type ReactNode } from "react";
 import { checkStock } from "@/app/actions";
 import { fmtBig, fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { DividendChart, EpsFcfChart, PriceChart, SeasonalityChart } from "./charts";
@@ -27,9 +27,36 @@ function FairHeadline({ value, deviation, currency }: { value: number; deviation
   );
 }
 
+const TABS = [
+  ["bewertung", "Bewertung"],
+  ["chart", "Chart"],
+  ["dividende", "Dividende"],
+  ["fundamental", "Fundamentaldaten"],
+  ["fair", "Fairer Wert"],
+] as const;
+type Tab = (typeof TABS)[number][0];
+
+/** Reiter wird beim ersten Öffnen aufgebaut und danach nur ausgeblendet – Zoom und Auswahl in den Charts bleiben erhalten. */
+function TabPanel({ id, tab, visited, children }: { id: Tab; tab: Tab; visited: Set<Tab>; children: ReactNode }) {
+  if (!visited.has(id)) return null;
+  // Unsichtbar statt display:none, damit die Charts ihre Breite behalten
+  const active = tab === id;
+  return (
+    <div role="tabpanel" inert={!active} aria-hidden={!active} className={`space-y-6 ${active ? "" : "invisible absolute inset-x-0 top-0 h-0 overflow-hidden"}`}>
+      {children}
+    </div>
+  );
+}
+
 export function StockCheck() {
   const [state, action, pending] = useActionState(checkStock, undefined);
   const queryRef = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState<Tab>("bewertung");
+  const [visited, setVisited] = useState<Set<Tab>>(new Set(["bewertung"]));
+  const open = (id: Tab) => {
+    setTab(id);
+    setVisited((v) => new Set(v).add(id));
+  };
 
   const run = (symbol?: string) => {
     const data = new FormData();
@@ -41,7 +68,7 @@ export function StockCheck() {
   const r = state?.result;
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
       <form
         className="card flex flex-col gap-3 p-4 sm:flex-row"
         onSubmit={(e) => {
@@ -76,7 +103,7 @@ export function StockCheck() {
               </div>
             </div>
 
-            <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <dt className="text-xs text-muted">Aktueller Kurs</dt>
                 <dd className="tabular text-lg font-semibold">{r.price ? fmtMoney(r.price.value, r.currency) : "–"}</dd>
@@ -92,21 +119,19 @@ export function StockCheck() {
                 <dd className="tabular text-lg font-semibold">{r.trailingYield !== undefined ? fmtPct(r.trailingYield) : "–"}</dd>
                 <dd className="text-xs text-muted">tatsächlich gezahlt</dd>
               </div>
-            </dl>
-
-            {r.schedule && (
-              <div className="mt-5 rounded-md bg-background p-3 text-sm">
-                <p className="mb-1 text-xs text-muted">Ausschüttungen</p>
-                <p>
-                  <span className="font-medium">{r.schedule.frequency ? r.schedule.frequency[0].toUpperCase() + r.schedule.frequency.slice(1) : "Rhythmus unbekannt"}</span>
-                  {r.schedule.months && (r.schedule.months.length >= 12 ? " · Ex-Tage jeden Monat" : ` · Ex-Tage üblich im ${r.schedule.months.join(", ")}`)}
-                </p>
-                <p className="tabular text-xs text-muted">
-                  {r.schedule.last && `Letzte: ${fmtDate(r.schedule.last.date)} – ${fmtMoney(r.schedule.last.amount, r.currency)} je Aktie`}
-                  {r.schedule.nextExDate && ` · Nächster Ex-Tag: ${fmtDate(r.schedule.nextExDate)}`}
-                </p>
+              <div>
+                <dt className="text-xs text-muted">Fairer Wert</dt>
+                <dd className="tabular text-lg font-semibold">
+                  {r.fairValue ? fmtMoney(r.fairValue.value, r.currency) : "–"}
+                  {r.dcf && !("unavailable" in r.dcf) && <span className="text-muted"> / {fmtMoney(r.dcf.value, r.currency)}</span>}
+                </dd>
+                <dd className="text-xs text-muted">
+                  <button type="button" onClick={() => open("fair")} className="text-accent">
+                    {r.dcf && !("unavailable" in r.dcf) ? "Dividende / DCF" : "nach Dividendenrendite"}
+                  </button>
+                </dd>
               </div>
-            )}
+            </dl>
 
             {state && state.listings.length > 1 && (
               <div className="mt-5 text-xs text-muted">
@@ -124,20 +149,77 @@ export function StockCheck() {
             )}
           </section>
 
-          <section className="card p-5">
-            <h3 className="mb-3 text-sm font-semibold">Kursverlauf</h3>
-            <PriceChart
-              key={r.symbol}
-              symbol={r.symbol}
-              currency={r.currency}
-              fairLines={[
-                ...(r.fairValue ? [{ label: "Dividende", value: r.fairValue.value, color: "var(--accent)" }] : []),
-                ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)" }] : []),
-              ]}
-            />
-          </section>
+          <div role="tablist" className="-mb-2 flex gap-1 overflow-x-auto border-b border-border">
+            {TABS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => open(id)}
+                className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === id ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-foreground"}`}
+              >
+                {label}
+                {id === "bewertung" && r.overall !== "GREY" && <span className="ml-1.5 text-xs text-muted">{r.passed}/{r.items.length}</span>}
+              </button>
+            ))}
+          </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <TabPanel id="bewertung" tab={tab} visited={visited}>
+            <section className="card divide-y divide-border">
+              {r.items.map((i) => (
+                <div key={i.key} className="flex gap-3 p-4">
+                  <span className="mt-1">
+                    <Light light={i.light} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted">{i.title}</p>
+                    <p className="font-medium">{i.verdict}</p>
+                    {i.details.length > 0 && (
+                      <ul className="tabular mt-1 space-y-0.5 text-xs text-muted">
+                        {i.details.map((d) => (
+                          <li key={d}>{d}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </section>
+          </TabPanel>
+          <TabPanel id="chart" tab={tab} visited={visited}>
+            <section className="card p-5">
+              <h3 className="mb-3 text-sm font-semibold">Kursverlauf</h3>
+              <PriceChart
+                key={r.symbol}
+                symbol={r.symbol}
+                currency={r.currency}
+                fairLines={[
+                  ...(r.fairValue ? [{ label: "Dividende", value: r.fairValue.value, color: "var(--accent)" }] : []),
+                  ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)" }] : []),
+                ]}
+              />
+            </section>
+
+            <section className="card p-5">
+              <h3 className="mb-3 text-sm font-semibold">Saisonalität</h3>
+              <SeasonalityChart key={r.symbol} symbol={r.symbol} />
+            </section>
+          </TabPanel>
+          <TabPanel id="dividende" tab={tab} visited={visited}>
+            {r.schedule && (
+              <section className="card p-5 text-sm">
+                <h3 className="mb-2 text-sm font-semibold">Ausschüttungen</h3>
+                <p>
+                  <span className="font-medium">{r.schedule.frequency ? r.schedule.frequency[0].toUpperCase() + r.schedule.frequency.slice(1) : "Rhythmus unbekannt"}</span>
+                  {r.schedule.months && (r.schedule.months.length >= 12 ? " · Ex-Tage jeden Monat" : ` · Ex-Tage üblich im ${r.schedule.months.join(", ")}`)}
+                </p>
+                <p className="tabular text-xs text-muted">
+                  {r.schedule.last && `Letzte: ${fmtDate(r.schedule.last.date)} – ${fmtMoney(r.schedule.last.amount, r.currency)} je Aktie`}
+                  {r.schedule.nextExDate && ` · Nächster Ex-Tag: ${fmtDate(r.schedule.nextExDate)}`}
+                </p>
+              </section>
+            )}
             <section className="card p-5">
               <h3 className="mb-3 text-sm font-semibold">Dividende je Aktie pro Jahr ({r.currency})</h3>
               {r.dividendsByYear.length ? (
@@ -147,109 +229,86 @@ export function StockCheck() {
               )}
               <p className="mt-1 text-xs text-muted">Letzte 10 abgeschlossene Jahre, nach Ex-Tag. Quelle: Yahoo Finance.</p>
             </section>
+          </TabPanel>
+          <TabPanel id="fundamental" tab={tab} visited={visited}>
             <section className="card p-5">
               <h3 className="mb-3 text-sm font-semibold">EPS und Free Cashflow (3 Jahre)</h3>
               <EpsFcfChart key={r.symbol} quarterly={r.fundamentals.quarterly} annual={r.fundamentals.annual} currency={r.financialCurrency ?? r.currency} />
               <p className="mt-1 text-xs text-muted">EPS je Aktie, Free Cashflow gesamt (rechte Achse). Quelle: Yahoo Finance{r.currency === "USD" ? ", ergänzt um SEC" : ""}.</p>
             </section>
-          </div>
-
-          <section className="card p-5">
-            <h3 className="mb-3 text-sm font-semibold">Saisonalität</h3>
-            <SeasonalityChart key={r.symbol} symbol={r.symbol} />
-          </section>
-
-          <section className="card p-5">
-            <h3 className="text-sm font-semibold">Fairer Wert</h3>
-            <div className="mt-3 grid gap-6 sm:grid-cols-2">
-              <div>
-                <p className="flex items-center gap-2 text-xs text-muted">
-                  <span className="inline-block w-4 border-t-2 border-dashed border-accent" /> Nach Dividendenrendite (Ø 5 Jahre)
-                </p>
-                {r.fairValue ? (
-                  <>
-                    <FairHeadline value={r.fairValue.value} deviation={r.fairValue.deviation} currency={r.currency} />
-                    <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
-                      <li>
-                        Jahresdividende {fmtMoney(r.fairValue.dividend, r.currency)} ÷ Ø-Rendite {fmtPct(r.fairValue.avgYield, 2)}
-                      </li>
-                      <li>Jahresdividende: {r.fairValue.dividendBasis}</li>
-                      <li>
-                        Ø aus {r.fairValue.months} Monatswerten {fmtDate(r.fairValue.from)} – {fmtDate(r.fairValue.to)}, Spanne {fmtPct(r.fairValue.minYield, 2)} bis{" "}
-                        {fmtPct(r.fairValue.maxYield, 2)}
-                      </li>
-                      {r.fairValue.notes.map((n) => (
-                        <li key={n} className="text-light-orange">
-                          Hinweis: {n}
+          </TabPanel>
+          <TabPanel id="fair" tab={tab} visited={visited}>
+            <section className="card p-5">
+              <h3 className="text-sm font-semibold">Fairer Wert</h3>
+              <div className="mt-3 grid gap-6 sm:grid-cols-2">
+                <div>
+                  <p className="flex items-center gap-2 text-xs text-muted">
+                    <span className="inline-block w-4 border-t-2 border-dashed border-accent" /> Nach Dividendenrendite (Ø 5 Jahre)
+                  </p>
+                  {r.fairValue ? (
+                    <>
+                      <FairHeadline value={r.fairValue.value} deviation={r.fairValue.deviation} currency={r.currency} />
+                      <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
+                        <li>
+                          Jahresdividende {fmtMoney(r.fairValue.dividend, r.currency)} ÷ Ø-Rendite {fmtPct(r.fairValue.avgYield, 2)}
                         </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-muted">Nicht berechenbar: braucht eine regelmäßige, aktuelle Dividende und mindestens 3 Jahre Historie.</p>
-                )}
-              </div>
-              <div>
-                <p className="flex items-center gap-2 text-xs text-muted">
-                  <span className="inline-block w-4 border-t-2 border-dashed border-light-orange" /> Nach DCF (Free Cashflow)
-                </p>
-                {r.dcf && !("unavailable" in r.dcf) ? (
-                  <>
-                    <FairHeadline value={r.dcf.value} deviation={r.dcf.deviation} currency={r.currency} />
-                    <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
-                      <li>
-                        Spanne {fmtMoney(r.dcf.low, r.currency)} – {fmtMoney(r.dcf.high, r.currency)} (Abzinsung ±1 Prozentpunkt)
-                      </li>
-                      <li>
-                        Basis: Ø-FCF {r.dcf.baseYears}: {fmtBig(r.dcf.baseFcf, r.financialCurrency ?? r.currency)}, {fmtBig(r.dcf.shares)} Aktien
-                      </li>
-                      <li>
-                        Wachstum Jahr 1–5: {fmtPct(r.dcf.growth)} p. a. ({r.dcf.growthBasis}), danach bis Jahr 10 auf {fmtPct(r.dcf.assumptions.terminalGrowth)}
-                      </li>
-                      <li>
-                        Abzinsung {fmtPct(r.dcf.assumptions.discountRate)}, ewiges Wachstum {fmtPct(r.dcf.assumptions.terminalGrowth)} –{" "}
-                        <Link href="/einstellungen" className="text-accent">
-                          anpassen
-                        </Link>
-                      </li>
-                      {r.dcf.notes.map((n) => (
-                        <li key={n} className="text-light-orange">
-                          Hinweis: {n}
+                        <li>Jahresdividende: {r.fairValue.dividendBasis}</li>
+                        <li>
+                          Ø aus {r.fairValue.months} Monatswerten {fmtDate(r.fairValue.from)} – {fmtDate(r.fairValue.to)}, Spanne {fmtPct(r.fairValue.minYield, 2)} bis{" "}
+                          {fmtPct(r.fairValue.maxYield, 2)}
                         </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-muted">Nicht berechenbar: {r.dcf && "unavailable" in r.dcf ? r.dcf.unavailable : "keine Daten"}.</p>
-                )}
-              </div>
-            </div>
-            <p className="mt-4 text-xs text-muted">
-              Beide Werte sind Modelle mit Annahmen, keine Anlageberatung. Die Dividendenmethode unterstellt, dass die Aktie zu ihrer üblichen Rendite zurückkehrt; der DCF
-              reagiert stark auf Abzinsung und Wachstum.
-            </p>
-          </section>
-
-          <section className="card divide-y divide-border">
-            {r.items.map((i) => (
-              <div key={i.key} className="flex gap-3 p-4">
-                <span className="mt-1">
-                  <Light light={i.light} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm text-muted">{i.title}</p>
-                  <p className="font-medium">{i.verdict}</p>
-                  {i.details.length > 0 && (
-                    <ul className="tabular mt-1 space-y-0.5 text-xs text-muted">
-                      {i.details.map((d) => (
-                        <li key={d}>{d}</li>
-                      ))}
-                    </ul>
+                        {r.fairValue.notes.map((n) => (
+                          <li key={n} className="text-light-orange">
+                            Hinweis: {n}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted">Nicht berechenbar: braucht eine regelmäßige, aktuelle Dividende und mindestens 3 Jahre Historie.</p>
+                  )}
+                </div>
+                <div>
+                  <p className="flex items-center gap-2 text-xs text-muted">
+                    <span className="inline-block w-4 border-t-2 border-dashed border-light-orange" /> Nach DCF (Free Cashflow)
+                  </p>
+                  {r.dcf && !("unavailable" in r.dcf) ? (
+                    <>
+                      <FairHeadline value={r.dcf.value} deviation={r.dcf.deviation} currency={r.currency} />
+                      <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
+                        <li>
+                          Spanne {fmtMoney(r.dcf.low, r.currency)} – {fmtMoney(r.dcf.high, r.currency)} (Abzinsung ±1 Prozentpunkt)
+                        </li>
+                        <li>
+                          Basis: Ø-FCF {r.dcf.baseYears}: {fmtBig(r.dcf.baseFcf, r.financialCurrency ?? r.currency)}, {fmtBig(r.dcf.shares)} Aktien
+                        </li>
+                        <li>
+                          Wachstum Jahr 1–5: {fmtPct(r.dcf.growth)} p. a. ({r.dcf.growthBasis}), danach bis Jahr 10 auf {fmtPct(r.dcf.assumptions.terminalGrowth)}
+                        </li>
+                        <li>
+                          Abzinsung {fmtPct(r.dcf.assumptions.discountRate)}, ewiges Wachstum {fmtPct(r.dcf.assumptions.terminalGrowth)} –{" "}
+                          <Link href="/einstellungen" className="text-accent">
+                            anpassen
+                          </Link>
+                        </li>
+                        {r.dcf.notes.map((n) => (
+                          <li key={n} className="text-light-orange">
+                            Hinweis: {n}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted">Nicht berechenbar: {r.dcf && "unavailable" in r.dcf ? r.dcf.unavailable : "keine Daten"}.</p>
                   )}
                 </div>
               </div>
-            ))}
-          </section>
+              <p className="mt-4 text-xs text-muted">
+                Beide Werte sind Modelle mit Annahmen, keine Anlageberatung. Die Dividendenmethode unterstellt, dass die Aktie zu ihrer üblichen Rendite zurückkehrt; der DCF
+                reagiert stark auf Abzinsung und Wachstum.
+              </p>
+            </section>
+          </TabPanel>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted">{OVERALL[r.overall]}. Mechanische Auswertung, keine Anlageberatung. Quellen: {r.sources.join(", ")}.</p>
