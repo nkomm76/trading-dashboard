@@ -18,7 +18,7 @@ function pickListing(query: string, hits: SearchHit[]): SearchHit | undefined {
   return hits.find((h) => h.symbol.endsWith(".DE")) ?? hits[0];
 }
 
-export type CheckResponse = { result?: CheckResult; listings: SearchHit[]; error?: string; isin?: string };
+export type CheckResponse = { result?: CheckResult; listings: SearchHit[]; error?: string; isin?: string; watched?: boolean };
 
 export async function runCheck(query: string, symbol?: string): Promise<CheckResponse> {
   const q = query.trim().toUpperCase();

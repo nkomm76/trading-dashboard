@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, useRef, useState, type ReactNode } from "react";
-import { checkStock } from "@/app/actions";
+import { startTransition, useActionState, useRef, useState, useTransition, type ReactNode } from "react";
+import { addWatch, checkStock } from "@/app/actions";
 import { fmtBig, fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { DividendChart, EpsFcfChart, PriceChart, SeasonalityChart } from "./charts";
 import { Light } from "./light";
@@ -44,6 +44,37 @@ function TabPanel({ id, tab, visited, children }: { id: Tab; tab: Tab; visited: 
   return (
     <div role="tabpanel" inert={!active} aria-hidden={!active} className={`space-y-6 ${active ? "" : "invisible absolute inset-x-0 top-0 h-0 overflow-hidden"}`}>
       {children}
+    </div>
+  );
+}
+
+function WatchButton({ symbol, isin, watched }: { symbol: string; isin?: string; watched?: boolean }) {
+  const [done, setDone] = useState(watched ?? false);
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  if (done)
+    return (
+      <Link href="/watchliste" className="text-xs text-accent">
+        ✓ Auf der Watchliste
+      </Link>
+    );
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        className="btn-secondary text-xs"
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            const res = await addWatch(symbol, isin);
+            setError(res?.error);
+            if (res?.ok) setDone(true);
+          })
+        }
+      >
+        {pending ? "Nehme auf …" : "+ Zur Watchliste"}
+      </button>
+      {error && <span className="max-w-xs text-right text-xs text-light-red">{error}</span>}
     </div>
   );
 }
@@ -97,9 +128,12 @@ export function StockCheck() {
                   {state?.isin && ` · ${state.isin}`}
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Light light={r.overall} size="lg" />
-                <span className="font-medium">{r.overall === "GREY" ? OVERALL.GREY : `${r.passed} von ${r.items.length} sehr gut`}</span>
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <Light light={r.overall} size="lg" />
+                  <span className="font-medium">{r.overall === "GREY" ? OVERALL.GREY : `${r.passed} von ${r.items.length} sehr gut`}</span>
+                </div>
+                <WatchButton key={r.symbol} symbol={r.symbol} isin={state?.isin} watched={state?.watched} />
               </div>
             </div>
 

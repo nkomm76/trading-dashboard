@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </Link>
           <Link href="/" className="hover:text-accent">Übersicht</Link>
           <Link href="/check" className="hover:text-accent">Aktien Check</Link>
+          <Link href="/watchliste" className="hover:text-accent">Watchliste</Link>
           <Link href="/kauf" className="hover:text-accent">Kauf / Verkauf</Link>
           <Link href="/dividenden" className="hover:text-accent">
             Dividenden

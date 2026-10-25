@@ -12,6 +12,7 @@ import { getFxRates, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
 import { runCheck, type CheckResponse } from "@/lib/check-server";
+import { addToWatchlist, isWatched, refreshWatchlist } from "@/lib/watchlist-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -240,5 +241,36 @@ export async function checkStock(_: CheckResponse | undefined, formData: FormDat
   const query = String(formData.get("query") ?? "").trim();
   if (query.length < 2) return { listings: [], error: "Bitte eine ISIN oder ein Kürzel eingeben." };
   const symbol = String(formData.get("symbol") ?? "") || undefined;
-  return runCheck(query, symbol);
+  const res = await runCheck(query, symbol);
+  return res.result ? { ...res, watched: await isWatched(res.result.symbol) } : res;
+}
+
+// --- Watchliste ---
+
+const SYMBOL = /^[A-Za-z0-9.\-^=]{1,32}$/;
+const ISIN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
+
+export async function addWatch(symbol: string, isin?: string): Promise<FormState> {
+  await requireAuth();
+  if (!SYMBOL.test(symbol) || (isin && !ISIN.test(isin))) return { error: "Ungültiges Kürzel." };
+  const error = await addToWatchlist(symbol, isin);
+  if (error) return { error };
+  revalidatePath("/watchliste");
+  return { ok: "Auf der Watchliste." };
+}
+
+export async function removeWatch(formData: FormData) {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  if (Number.isInteger(id)) await db.watchItem.deleteMany({ where: { id } });
+  revalidatePath("/watchliste");
+}
+
+export async function runWatchRefresh(): Promise<FormState> {
+  await requireAuth();
+  const res = await refreshWatchlist();
+  revalidatePath("/watchliste");
+  return res.errors.length
+    ? { error: `${res.count - res.errors.length} von ${res.count} aktualisiert. Fehler: ${res.errors.join("; ")}` }
+    : { ok: `${res.count} Werte aktualisiert.` };
 }

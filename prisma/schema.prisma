@@ -134,3 +134,17 @@ model Dividend {
 
   @@unique([stockId, exDate])
 }
+
+// Beobachtete Aktie mit dem letzten Ergebnis aus dem Aktien Check
+model WatchItem {
+  id        Int       @id @default(autoincrement())
+  symbol    String    @unique @db.VarChar(32)
+  isin      String?   @db.VarChar(12)
+  name      String    @db.VarChar(255)
+  currency  String    @db.VarChar(8)
+  light     Light?
+  summary   Json? // Kurzfassung: Kriterien, Kurs, faire Werte
+  checkedAt DateTime?
+  error     String?   @db.VarChar(255) // letzter Fehler beim Aktualisieren
+  createdAt DateTime  @default(now())
+}
