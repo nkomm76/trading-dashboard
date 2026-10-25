@@ -5,11 +5,13 @@ import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { PositionsTable } from "@/components/positions-table";
 import { RefreshButton } from "@/components/refresh-button";
 import { refreshIfStale } from "@/lib/refresh";
+import { refreshWatchlistIfStale } from "@/lib/watchlist-server";
 import { loadDividends } from "@/lib/dividend-data";
 
 export default async function DashboardPage() {
   // Kein Cronjob im lokalen Betrieb: beim Öffnen nachladen, wenn die Daten älter als 12 Stunden sind
   const refreshing = await refreshIfStale();
+  await refreshWatchlistIfStale();
   const { positions, closed, totals, fxAsOf } = await loadPortfolio();
   const dividends = await loadDividends();
   const lastRun = await db.refreshLog.findFirst({ where: { finishedAt: { not: null } }, orderBy: { startedAt: "desc" } });

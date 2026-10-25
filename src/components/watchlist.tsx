@@ -9,7 +9,7 @@ import { PriceChart } from "./charts";
 import { Light } from "./light";
 import { RefreshButton } from "./refresh-button";
 
-export function Watchlist({ rows }: { rows: WatchRow[] }) {
+export function Watchlist({ rows, refreshing }: { rows: WatchRow[]; refreshing?: boolean }) {
   const [selected, setSelected] = useState(rows[0]?.symbol);
   // Nach dem Löschen des gewählten Titels auf den ersten zurückfallen
   const current = rows.find((r) => r.symbol === selected) ?? rows[0];
@@ -27,6 +27,7 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
             </Link>{" "}
             aufnehmen. Ampel nach den Kriterien des Aktien Checks.
           </p>
+          {refreshing && <p className="text-xs text-light-orange">Titel werden im Hintergrund aktualisiert – Seite in ein bis zwei Minuten neu laden.</p>}
         </div>
         {rows.length > 0 && <RefreshButton target="watchlist" />}
       </div>

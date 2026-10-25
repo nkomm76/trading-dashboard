@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { refreshAll } from "@/lib/refresh";
+import { refreshWatchlist } from "@/lib/watchlist-server";
 
 export const maxDuration = 600;
 
@@ -12,5 +13,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const result = await refreshAll({ outlook: true });
-  return NextResponse.json(result);
+  const watchlist = await refreshWatchlist();
+  return NextResponse.json({ ...result, watchlist });
 }

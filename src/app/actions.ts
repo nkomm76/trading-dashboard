@@ -12,7 +12,7 @@ import { getFxRates, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
 import { runCheck, type CheckResponse } from "@/lib/check-server";
-import { addToWatchlist, isWatched, refreshWatchlist } from "@/lib/watchlist-server";
+import { addToWatchlist, isWatched, refreshWatchlist, startWatchlistRefresh } from "@/lib/watchlist-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -138,10 +138,13 @@ export async function deletePurchase(_: FormState, formData: FormData): Promise<
 export async function runRefresh(withOutlook: boolean): Promise<FormState> {
   await requireAuth();
   const res = await refreshAll({ outlook: withOutlook });
+  // Watchliste danach im Hintergrund, damit der Knopf nicht auf jeden Aktien Check wartet
+  const watched = await startWatchlistRefresh();
+  const note = watched ? " Watchliste wird im Hintergrund aktualisiert." : "";
   revalidatePath("/", "layout");
   return res.errors.length
-    ? { error: `${res.count - res.errors.length} von ${res.count} aktualisiert. Fehler: ${res.errors.join("; ")}` }
-    : { ok: `${res.count} Werte aktualisiert.` };
+    ? { error: `${res.count - res.errors.length} von ${res.count} aktualisiert. Fehler: ${res.errors.join("; ")}${note}` }
+    : { ok: `${res.count} Werte aktualisiert.${note}` };
 }
 
 export async function saveSettings(_: FormState, formData: FormData): Promise<FormState> {

@@ -7,7 +7,7 @@ Privates, passwortgeschütztes Dashboard für das eigene Dividendendepot (Next.j
 - Ampel aus festen Regeln (Schwellen unter „Einstellungen“) plus optionaler KI-Auswertung des Jahresausblicks (Claude API mit Websuche)
 - **Keine Quelle → keine Anzeige:** Fehlende Werte bleiben leer; jede Zahl zeigt per Tooltip Quelle und Stichtag
 
-Datenquellen (kostenlos): Yahoo Finance (`yahoo-finance2`), SEC EDGAR (US-Ergänzung), EZB-Referenzkurse.
+Datenquellen (kostenlos): Yahoo Finance (`yahoo-finance2`), SEC EDGAR (US-Ergänzung), EZB-Referenzkurse, optional Eulerpool (Gratis-Tarif: längere Jahreshistorie und ISIN-Suche, wenn Yahoo eine ISIN nicht kennt).
 
 ## Lokal nutzen (Standard)
 
@@ -17,7 +17,7 @@ cd ~/KI/code/dividenden-dashboard && npm run app
 
 Danach http://localhost:3000 öffnen. Beenden mit Ctrl-C im Terminal.
 MySQL startet über Homebrew automatisch mit dem Mac. Sind die Daten beim Öffnen des Dashboards älter als 12 Stunden,
-werden sie im Hintergrund aktualisiert. Für lokales http muss in `.env` `COOKIE_SECURE="false"` stehen.
+werden sie im Hintergrund aktualisiert; ebenso Titel der Watchliste beim Öffnen der Übersicht oder der Watchliste. Für lokales http muss in `.env` `COOKIE_SECURE="false"` stehen.
 
 ## Entwicklung
 

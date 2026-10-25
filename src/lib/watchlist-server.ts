@@ -56,8 +56,41 @@ export async function addToWatchlist(symbol: string, isin?: string) {
   return checkAndStore(symbol, isin, "add");
 }
 
-export async function refreshWatchlist(): Promise<{ count: number; errors: string[] }> {
-  const items = await db.watchItem.findMany({ select: { symbol: true, isin: true, name: true } });
-  const results = await mapLimit(items, 3, (i) => checkAndStore(i.symbol, i.isin ?? undefined, "refresh"));
-  return { count: items.length, errors: results.flatMap((e, i) => (e ? [`${items[i].name}: ${e}`] : [])) };
+type WatchRefresh = { count: number; errors: string[] };
+
+const STALE_HOURS = 12;
+const staleWhere = () => ({ OR: [{ checkedAt: null }, { checkedAt: { lt: new Date(Date.now() - STALE_HOURS * 3_600_000) } }] });
+
+// Nur ein Lauf gleichzeitig; wer währenddessen aktualisiert, wartet auf diesen Lauf
+let running: Promise<WatchRefresh> | undefined;
+let lastAuto = 0;
+
+/** Alle Titel neu prüfen (staleOnly: nur die, deren letzter Check älter als 12 Stunden ist). */
+export function refreshWatchlist(opts: { staleOnly?: boolean } = {}): Promise<WatchRefresh> {
+  running ??= (async () => {
+    const items = await db.watchItem.findMany({ where: opts.staleOnly ? staleWhere() : undefined, select: { symbol: true, isin: true, name: true } });
+    const results = await mapLimit(items, 3, (i) => checkAndStore(i.symbol, i.isin ?? undefined, "refresh"));
+    return { count: items.length, errors: results.flatMap((e, i) => (e ? [`${items[i].name}: ${e}`] : [])) };
+  })().finally(() => {
+    running = undefined;
+  });
+  return running;
+}
+
+/** Startet im Hintergrund eine Aktualisierung veralteter Titel; true, wenn gerade eine läuft. */
+export async function refreshWatchlistIfStale(): Promise<boolean> {
+  if (running) return true;
+  // Titel, deren Abruf scheitert, bleiben veraltet – höchstens alle 15 Minuten neu versuchen
+  if (Date.now() - lastAuto < 15 * 60_000) return false;
+  if (!(await db.watchItem.count({ where: staleWhere() }))) return false;
+  lastAuto = Date.now();
+  void refreshWatchlist({ staleOnly: true }).catch((e) => console.error("Automatische Aktualisierung der Watchliste:", e));
+  return true;
+}
+
+/** Startet im Hintergrund eine Aktualisierung aller Titel; liefert deren Anzahl. */
+export async function startWatchlistRefresh(): Promise<number> {
+  const count = await db.watchItem.count();
+  if (count) void refreshWatchlist().catch((e) => console.error("Aktualisierung der Watchliste:", e));
+  return count;
 }

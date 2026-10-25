@@ -1,8 +1,10 @@
 import "server-only";
 import { normalizeEulerpool } from "./eulerpool-normalize";
+import { parseProfile, type IsinProfile } from "./listing-match";
 import type { StatementRow } from "./types";
 
-// Eulerpool (kostenloser Tarif, 100.000 Abfragen/Monat): nur zum Verlängern der Jahreshistorie.
+// Eulerpool (kostenloser Tarif, 100.000 Abfragen/Monat): zum Verlängern der Jahreshistorie
+// und als Ersatz, wenn Yahoo eine ISIN nicht findet.
 // Ohne EULERPOOL_API_KEY bleibt alles beim Alten.
 
 const BASE = "https://api.eulerpool.com/api/1/equity";
@@ -16,6 +18,23 @@ async function get(path: string): Promise<unknown> {
   });
   if (!res.ok) throw new Error(`Eulerpool ${res.status}`);
   return res.json();
+}
+
+// Profile ändern sich kaum: einen Tag im Speicher halten, um Abfragen zu sparen
+const profiles = new Map<string, { at: number; profile?: IsinProfile }>();
+
+/** Name und Kürzel zu einer ISIN; undefined, wenn Eulerpool sie nicht kennt. Wirft, wenn Eulerpool nicht erreichbar ist. */
+export async function fetchEulerpoolProfile(isin: string): Promise<IsinProfile | undefined> {
+  const hit = profiles.get(isin);
+  if (hit && Date.now() - hit.at < 86_400_000) return hit.profile;
+  let profile: IsinProfile | undefined;
+  try {
+    profile = parseProfile(await get(`profile/${isin}`), isin);
+  } catch (e) {
+    if (!(e instanceof Error && /^Eulerpool (400|404)$/.test(e.message))) throw e;
+  }
+  profiles.set(isin, { at: Date.now(), profile });
+  return profile;
 }
 
 /** Jahreswerte (Umsatz, EPS, Aktien, operativer Cashflow, Investitionen) per ISIN; leer bei Fehler oder ohne Schlüssel. */

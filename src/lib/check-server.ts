@@ -7,7 +7,8 @@ import { fetchEulerpoolAnnual } from "./data/eulerpool";
 import { extendHistory, type Extension } from "./data/eulerpool-normalize";
 import { fetchSecAnnual, fetchSecQuarterly, lookupCik } from "./data/sec";
 import { mergeRows, samePeriod } from "./refresh";
-import { fetchMarketData, searchStocks, type SearchHit } from "./data/yahoo";
+import { findListings } from "./data/search";
+import { fetchMarketData, type SearchHit } from "./data/yahoo";
 import type { StatementRow } from "./data/types";
 import { getFxRates, getThresholds } from "./settings";
 
@@ -34,14 +35,10 @@ export function recentCheck(symbol: string): CheckResponse | undefined {
 
 export async function runCheck(query: string, symbol?: string): Promise<CheckResponse> {
   const q = query.trim().toUpperCase();
-  let listings: SearchHit[] = [];
-  try {
-    listings = await searchStocks(q);
-  } catch {
-    // Suche fehlgeschlagen – ggf. direkt als Symbol versuchen
-  }
+  // Findet die Suche nichts, wird ein Kürzel direkt als Symbol versucht
+  const { hits: listings, note } = await findListings(q);
   const target = symbol ?? pickListing(q, listings)?.symbol ?? (ISIN.test(q) ? undefined : q);
-  if (!target) return { listings, error: "Zu dieser ISIN wurde keine Aktie gefunden." };
+  if (!target) return { listings, error: note ?? "Zu dieser ISIN wurde keine Aktie gefunden." };
 
   // Eulerpool parallel laden (nur per ISIN); dient ausschließlich zum Verlängern der Jahreshistorie
   const isin = ISIN.test(q) ? q : undefined;
