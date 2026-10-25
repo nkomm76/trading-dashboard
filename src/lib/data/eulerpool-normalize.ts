@@ -45,16 +45,17 @@ const deviates = (a: number | undefined, b: number | undefined, tolerance: numbe
  * Verlängert die Jahreshistorie der Hauptquelle um ältere Eulerpool-Jahre.
  * Vorher müssen die Jahre, die beide Quellen haben, zusammenpassen (Umsatz ±10 %, operativer Cashflow ±15 %);
  * sonst bleibt es bei der Hauptquelle. Jüngere Jahre der Hauptquelle werden nie ersetzt.
+ * `compare` schränkt den Abgleich ein, z. B. nur Cashflow, wenn der Umsatz rückwirkend geändert wurde (Abspaltungen).
  */
-export function extendHistory(base: StatementRow[], extra: StatementRow[], window = 6): Extension {
+export function extendHistory(base: StatementRow[], extra: StatementRow[], window = 6, compare: ("revenue" | "cashflow")[] = ["revenue", "cashflow"]): Extension {
   if (!extra.length) return { rows: base, addedYears: [] };
   const baseYears = new Map(base.map((r) => [fiscalYear(r.date), r]));
   const overlap = extra.filter((e) => baseYears.has(fiscalYear(e.date)));
   if (!overlap.length) return { rows: base, addedYears: [], rejected: "keine gemeinsamen Jahre zum Abgleich" };
   for (const e of overlap) {
     const b = baseYears.get(fiscalYear(e.date))!;
-    if (deviates(b.totalRevenue, e.totalRevenue, 0.1)) return { rows: base, addedYears: [], rejected: `Umsatz ${fiscalYear(e.date)} weicht ab` };
-    if (deviates(b.operatingCashFlow, e.operatingCashFlow, 0.15)) return { rows: base, addedYears: [], rejected: `Cashflow ${fiscalYear(e.date)} weicht ab` };
+    if (compare.includes("revenue") && deviates(b.totalRevenue, e.totalRevenue, 0.1)) return { rows: base, addedYears: [], rejected: `Umsatz ${fiscalYear(e.date)} weicht ab` };
+    if (compare.includes("cashflow") && deviates(b.operatingCashFlow, e.operatingCashFlow, 0.15)) return { rows: base, addedYears: [], rejected: `Cashflow ${fiscalYear(e.date)} weicht ab` };
   }
   const firstBase = base.length ? Math.min(...baseYears.keys()) : Infinity;
   // Nur so viele ältere Jahre, wie das Auswertungsfenster (5 Jahre = 6 Stichtage) noch aufnehmen kann

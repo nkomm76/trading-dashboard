@@ -4,6 +4,7 @@ import { convert, fetchEcbRates } from "./data/fx";
 import { fetchEulerpoolAnnual } from "./data/eulerpool";
 import { extendHistory, type Extension } from "./data/eulerpool-normalize";
 import { fetchSecAnnual, fetchSecQuarterly, lookupCik } from "./data/sec";
+import { fcfOf } from "./metrics";
 import { mergeRows, samePeriod } from "./refresh";
 import { fetchMarketData, searchStocks, type SearchHit } from "./data/yahoo";
 import type { StatementRow } from "./data/types";
@@ -44,6 +45,7 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
 
   // US-Werte: längere Jahreshistorie aus SEC-Berichten, wenn sie mehr Jahre abdeckt
   let growthRows = market.annual;
+  let secAnnual: StatementRow[] = [];
   let chartQuarterly: StatementRow[] | undefined;
   if (!target.includes(".") && market.currency === "USD") {
     const cik = await lookupCik(target).catch(() => undefined);
@@ -55,6 +57,7 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
     // Fürs Diagramm auch ältere Quartale aus SEC übernehmen (Yahoo liefert nur gut ein Jahr)
     const yahooQ = market.quarterly;
     chartQuarterly = [...yahooQ, ...secQuarterly.filter((r) => !yahooQ.some((y) => samePeriod(y.date, r.date)))].sort((a, b) => a.date.localeCompare(b.date));
+    secAnnual = sec;
     const secYears = sec.filter((r) => r.totalRevenue !== undefined || r.dilutedEPS !== undefined).length;
     const yahooYears = market.annual.filter((r) => r.totalRevenue !== undefined || r.dilutedEPS !== undefined).length;
     if (secYears > yahooYears) growthRows = sec;
@@ -74,14 +77,20 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   // Für das Ø-KGV bis zu 10 Jahre Gewinnhistorie
   const epsExt = extendHistory(growthRows, ep, 11);
   // REITs: Eulerpool zieht Immobilienkäufe vom Free Cashflow ab – für den DCF nicht vergleichbar
-  const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(market.annual, ep);
+  // US-Werte: ältere Free-Cashflow-Jahre aus SEC-Berichten, damit das Wachstum aus 3 gegen 3 Jahren entsteht
+  const secFcf = secAnnual.filter((r) => r.operatingCashFlow !== undefined && r.capitalExpenditure !== undefined);
+  // Leere Jahreszeilen von Yahoo nicht mitzählen; Umsätze werden nach Abspaltungen rückwirkend geändert, daher nur Cashflow abgleichen
+  const yahooFcf = market.annual.filter((r) => fcfOf(r) !== undefined);
+  const dcfBase = secFcf.length ? extendHistory(yahooFcf, secFcf, 6, ["cashflow"]) : undefined;
+  if (dcfBase?.addedYears.length && !sources.includes("SEC")) sources.push("SEC");
+  const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(dcfBase?.rows ?? market.annual, ep);
   if (growthExt.addedYears.length || dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
 
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
   const result = evaluateCheck(market, {
     growthRows: growthExt.rows,
     growthNote: describe(growthExt),
-    dcfHistory: dcfExt && { annual: dcfExt.rows, note: describe(dcfExt) },
+    dcfHistory: dcfExt ? { annual: dcfExt.rows, note: describe(dcfExt) } : dcfBase && { annual: dcfBase.rows },
     epsHistory: { annual: epsExt.rows, note: describe(epsExt) },
     sources,
     chartQuarterly,

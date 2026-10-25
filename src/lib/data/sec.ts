@@ -54,9 +54,10 @@ export async function fetchSecQuarterly(cik: string): Promise<StatementRow[]> {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+const CAPEX_TAGS = ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"];
 const REVENUE_TAGS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerIncludingAssessedTax"];
 
-/** Jahreswerte (10-K, Geschäftsjahr) für Umsatz und verwässertes EPS – längere Historie als Yahoo. */
+/** Jahreswerte (10-K, Geschäftsjahr) für Umsatz, verwässertes EPS, Free Cashflow und Aktienzahl – längere Historie als Yahoo. */
 export async function fetchSecAnnual(cik: string): Promise<StatementRow[]> {
   const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": UA } });
   if (!res.ok) return [];
@@ -71,5 +72,14 @@ export async function fetchSecAnnual(cik: string): Promise<StatementRow[]> {
   for (const tag of REVENUE_TAGS) {
     for (const f of gaap[tag]?.units.USD ?? []) if (isYear(f)) row(f.end).totalRevenue ??= f.val;
   }
+  // Für den DCF: Cashflow, Investitionen und verwässerte Aktienzahl (spätere Berichte überschreiben frühere Angaben)
+  for (const f of gaap.NetCashProvidedByUsedInOperatingActivities?.units.USD ?? []) if (isYear(f)) row(f.end).operatingCashFlow = f.val;
+  // Investitionen: erste Kennung mit Daten je Jahr (z. B. Verizon meldet „ProductiveAssets“)
+  for (const tag of CAPEX_TAGS) {
+    const byEnd = new Map<string, number>();
+    for (const f of gaap[tag]?.units.USD ?? []) if (isYear(f)) byEnd.set(f.end, f.val);
+    for (const [end, val] of byEnd) row(end).capitalExpenditure ??= -val;
+  }
+  for (const f of gaap.WeightedAverageNumberOfDilutedSharesOutstanding?.units.shares ?? []) if (isYear(f)) row(f.end).dilutedAverageShares = f.val;
   return [...rows.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

@@ -264,6 +264,37 @@ export type DcfResult = DcfValue | { unavailable: string };
 const fy = (d: string) => (d.slice(5, 7) === "01" && Number(d.slice(8, 10)) <= 10 ? Number(d.slice(0, 4)) - 1 : Number(d.slice(0, 4)));
 const cagr = (first: number, last: number, years: number) => (first > 0 && last > 0 && years > 0 ? Math.pow(last / first, 1 / years) - 1 : undefined);
 
+type GrowthInput = { date: string; value: number; shares?: number };
+type SmoothedGrowth = { growth?: number; perShare: boolean; dilution: number; head: string; tail: string; span: number };
+
+/**
+ * Wachstum zwischen dem Ø der ersten und dem Ø der letzten Jahre (je bis zu 3) statt zwischen zwei Einzeljahren,
+ * damit ein Ausreißerjahr am Anfang oder Ende die Annahme nicht kippt. Je Aktie, wenn die Aktienzahl in allen
+ * verwendeten Jahren bekannt ist.
+ */
+export function smoothedGrowth(list: GrowthInput[]): SmoothedGrowth | undefined {
+  const k = Math.min(3, Math.floor(list.length / 2));
+  if (k < 1) return undefined;
+  const head = list.slice(0, k);
+  const tail = list.slice(-k);
+  // Aktienzahlen aus verschiedenen Quellen können in anderen Einheiten stehen: über Faktor 2 Schwankung nicht verwenden
+  const shares = [...head, ...tail].map((r) => r.shares ?? 0);
+  const perShare = shares.every((x) => x > 0) && Math.max(...shares) / Math.min(...shares) <= 2;
+  const avg = (rows: GrowthInput[], f: (r: GrowthInput) => number) => rows.reduce((a, r) => a + f(r), 0) / rows.length;
+  const value = (r: GrowthInput) => (perShare ? r.value / r.shares! : r.value);
+  const time = (r: GrowthInput) => Date.parse(r.date);
+  const years = (avg(tail, time) - avg(head, time)) / (365.25 * 86_400_000);
+  const range = (rows: GrowthInput[]) => (rows.length > 1 ? `Ø ${fy(rows[0].date)}–${fy(rows[rows.length - 1].date)}` : String(fy(rows[0].date)));
+  return {
+    growth: cagr(avg(head, value), avg(tail, value), years),
+    perShare,
+    dilution: perShare ? avg(tail, (r) => r.shares!) / avg(head, (r) => r.shares!) : 1,
+    head: range(head),
+    tail: range(tail),
+    span: (time(list[list.length - 1]) - time(list[0])) / (365.25 * 86_400_000),
+  };
+}
+
 /** Barwert je Aktie: 5 Jahre Wachstum g, Jahre 6–10 linear auf das ewige Wachstum, danach Endwert (Gordon). */
 export function dcfPerShare(baseFcf: number, growth: number, a: DcfAssumptions, shares: number, rate = a.discountRate): number {
   let fcf = baseFcf;
@@ -303,31 +334,32 @@ export function dcfValue(
   const baseFcf = last3.reduce((s, r) => s + r.fcf, 0) / 3;
   if (baseFcf <= 0) return { unavailable: "Free Cashflow im Schnitt der letzten 3 Jahre nicht positiv" };
 
-  // Wachstum über höchstens 5 Jahre (6 Stichtage)
-  const first = rows[Math.max(0, rows.length - 6)];
-  const last = rows[rows.length - 1];
-  const years = (Date.parse(last.date) - Date.parse(first.date)) / (365.25 * 86_400_000);
+  // Wachstum über höchstens 5 Jahre (6 Stichtage), aus Durchschnitten statt Einzeljahren
   const notes: string[] = [];
   if (history?.note) notes.push(history.note);
-  // Wachstum je Aktie: Neue Aktien (z. B. für Zukäufe) verteilen den Cashflow auf mehr Anteile
-  const perShare = first.shares && last.shares;
-  const dilution = perShare ? last.shares! / first.shares! : 1;
-  let raw = cagr(first.fcf, last.fcf / dilution, years);
-  let basis = `Free Cashflow${perShare ? " je Aktie" : ""} ${fy(first.date)}–${fy(last.date)}`;
+  const fcfGrowth = smoothedGrowth(rows.slice(-6).map((r) => ({ date: r.date, value: r.fcf, shares: r.shares })));
+  let g = fcfGrowth;
+  let raw = fcfGrowth?.growth;
+  let basis = fcfGrowth ? `Free Cashflow${fcfGrowth.perShare ? " je Aktie" : ""} ${fcfGrowth.head} gegenüber ${fcfGrowth.tail}` : "";
   if (raw === undefined) {
-    const rev = (history?.annual ?? market.annual).filter((r) => typeof r.totalRevenue === "number").slice(-6);
-    const rf = rev[0];
-    const rl = rev[rev.length - 1];
-    const revDilution = rf?.dilutedAverageShares && rl?.dilutedAverageShares ? rl.dilutedAverageShares / rf.dilutedAverageShares : 1;
-    raw = rf && rl ? cagr(rf.totalRevenue!, rl.totalRevenue! / revDilution, (Date.parse(rl.date) - Date.parse(rf.date)) / (365.25 * 86_400_000)) : undefined;
-    basis = rf && rl ? `Umsatz je Aktie ${fy(rf.date)}–${fy(rl.date)} (FCF schwankt zu stark)` : basis;
+    // Ausweichen auf den Umsatz, wenn der Free Cashflow am Anfang im Schnitt nicht positiv war
+    const rev = (history?.annual ?? market.annual)
+      .filter((r) => typeof r.totalRevenue === "number")
+      .slice(-6)
+      .map((r) => ({ date: r.date, value: r.totalRevenue!, shares: r.dilutedAverageShares }));
+    const revGrowth = smoothedGrowth(rev);
+    if (revGrowth?.growth !== undefined) {
+      g = revGrowth;
+      raw = revGrowth.growth;
+      basis = `Umsatz${revGrowth.perShare ? " je Aktie" : ""} ${revGrowth.head} gegenüber ${revGrowth.tail} (FCF schwankt zu stark)`;
+    }
   }
-  if (!perShare) notes.push("Aktienzahl früherer Jahre fehlt – Wachstum ohne Verwässerung gerechnet");
-  else if (dilution > 1.1) notes.push(`Aktienzahl im Zeitraum um ${((dilution - 1) * 100).toFixed(0)} % gestiegen – im Wachstum berücksichtigt`);
+  if (g && !g.perShare) notes.push("Aktienzahl früherer Jahre fehlt oder ist nicht vergleichbar – Wachstum ohne Verwässerung gerechnet");
+  else if (g && g.dilution > 1.1) notes.push(`Aktienzahl im Zeitraum um ${((g.dilution - 1) * 100).toFixed(0)} % gestiegen – im Wachstum berücksichtigt`);
   if (raw === undefined) return { unavailable: "Kein Wachstum aus FCF oder Umsatz ableitbar" };
   const growth = Math.min(a.maxGrowth, Math.max(0, raw));
   if (growth !== raw) notes.push(`Wachstum ${raw < 0 ? "auf 0 % angehoben" : "begrenzt"} (historisch ${(raw * 100).toFixed(1).replace(".", ",")} % p. a.)`);
-  if (years < 4) notes.push(`Wachstum aus nur ${Math.round(years)} Jahren abgeleitet`);
+  if (g && g.span < 4) notes.push(`Wachstum aus nur ${Math.round(g.span) + 1} Geschäftsjahren abgeleitet`);
 
   // Bilanzwährung → Handelswährung (z. B. EUR-Bilanz, Notierung in USD)
   const sameCurrency = !market.financialCurrency || market.financialCurrency === market.currency;
