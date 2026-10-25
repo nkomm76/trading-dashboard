@@ -11,6 +11,7 @@ import { refreshAll, refreshStock } from "@/lib/refresh";
 import { getFxRates, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
+import { fmtDate } from "@/lib/format";
 import { runCheck, type CheckResponse } from "@/lib/check-server";
 import { addToWatchlist, isWatched, refreshWatchlist, startWatchlistRefresh } from "@/lib/watchlist-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
@@ -98,7 +99,7 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
   const others = stock.purchases.filter((x) => x.id !== id).map(toTx);
   const after = computePosition([...others, { type: p.type, date: p.date, price: p.price, quantity: p.quantity, fees: p.fees }]);
   if (after.oversold) {
-    return { error: `Am ${new Date(after.oversold.date).toLocaleDateString("de-DE")} wären ${after.oversold.missing.toLocaleString("de-DE")} Stück mehr verkauft als im Bestand.` };
+    return { error: `Am ${fmtDate(after.oversold.date)} wären ${after.oversold.missing.toLocaleString("de-DE")} Stück mehr verkauft als im Bestand.` };
   }
 
   const data = { type: p.type, stockId: stock.id, date: new Date(p.date), price: p.price, quantity: p.quantity, fees: p.fees, note: p.note };

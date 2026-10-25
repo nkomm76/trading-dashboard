@@ -1,5 +1,6 @@
 import type { DividendPayment, MarketData, PricePoint, StatementRow } from "./data/types";
 import { epsSeries, fairValueByPe, type PeFairValue } from "./fair-pe";
+import { fmtDate } from "./format";
 import { annualTotals, computeMetrics, detectDividendCut, detectFrequency, fcfOf } from "./metrics";
 import { DEFAULT_THRESHOLDS, type DcfAssumptions, type LightColor } from "./rating";
 
@@ -45,7 +46,6 @@ export type CheckResult = {
 
 const ORDER: Record<LightColor, number> = { GREEN: 0, ORANGE: 1, RED: 2, GREY: -1 };
 const pct = (v: number) => `${(v * 100).toFixed(1).replace(".", ",")} %`;
-const deDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 const num = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 4 });
 
 const PER_YEAR = { monatlich: 12, quartalsweise: 4, halbjährlich: 2, jährlich: 1, unregelmäßig: 0 } as const;
@@ -114,7 +114,7 @@ export function checkPayout(market: MarketData, toTradingCurrency?: (v: number) 
   }
   if (!value) return { ...base, light: "GREY", verdict: "Keine Daten zur Ausschüttungsquote", details: [] };
   const v = value.value;
-  const details = [`${pct(v)} vom ${label}`, `Stand ${deDate(value.asOf)}${value.period ? ` (${value.period})` : ""}`];
+  const details = [`${pct(v)} vom ${label}`, `Stand ${fmtDate(value.asOf)}${value.period ? ` (${value.period})` : ""}`];
   if (v < 0.8) return { ...base, light: "GREEN", verdict: `Sehr gut – ${pct(v)}`, details };
   if (v <= 1) return { ...base, light: "ORANGE", verdict: `${pct(v)} – wenig Puffer`, details };
   return { ...base, light: "RED", verdict: `${pct(v)} – mehr ausgeschüttet als verdient`, details };
@@ -170,7 +170,7 @@ export function checkTrend(t: TrendInput | undefined): CheckItem {
   if (!t || !(t.ema200 > 0)) return { ...base, light: "GREY", verdict: "Keine Daten zur EMA 200", details: ["Zu wenige Tageskurse in der Quelle"] };
   const money = (v: number) => `${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t.currency === "EUR" ? "€" : t.currency}`;
   const gap = t.price / t.ema200 - 1;
-  const details = [`Kurs ${money(t.price)}, EMA 200 ${money(t.ema200)} (Stand ${deDate(t.asOf)})`, "Grün: über der Linie; orange: bis 5 % darunter; rot: mehr als 5 % darunter"];
+  const details = [`Kurs ${money(t.price)}, EMA 200 ${money(t.ema200)} (Stand ${fmtDate(t.asOf)})`, "Grün: über der Linie; orange: bis 5 % darunter; rot: mehr als 5 % darunter"];
   if (gap > 0) return { ...base, light: "GREEN", verdict: `Sehr gut – ${pct(gap)} über der EMA 200`, details };
   if (t.price >= t.ema200 * 0.95) return { ...base, light: "ORANGE", verdict: `Knapp darunter – ${pct(-gap)} unter der EMA 200`, details };
   return { ...base, light: "RED", verdict: `${pct(-gap)} unter der EMA 200`, details };

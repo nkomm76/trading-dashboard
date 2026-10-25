@@ -17,8 +17,12 @@ export const fmtBig = (v: number | undefined, currency?: string) =>
     ? "–"
     : new Intl.NumberFormat(de, { notation: "compact", maximumFractionDigits: 1, ...(currency ? { style: "currency", currency } : {}) }).format(v);
 
+// Reine Datumsangaben (Stichtage, Ex-Tage, Kauf- und Kursdaten) stehen für Mitternacht UTC. In Ortszeit
+// formatiert rutschen sie westlich von UTC auf den Vortag (Kurs vom Freitag erschien als „Stand Donnerstag“).
+const dateOnly = (iso: string) => /^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/.test(iso);
+
 export const fmtDate = (iso: string | undefined) =>
-  iso ? new Intl.DateTimeFormat(de, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso)) : "–";
+  iso ? new Intl.DateTimeFormat(de, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: dateOnly(iso) ? "UTC" : undefined }).format(new Date(iso)) : "–";
 
 /** Tooltip-Text mit Herkunft eines Werts */
 export const sourceHint = (s: Sourced<unknown> | undefined) =>
