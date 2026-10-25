@@ -230,7 +230,7 @@ export function StockCheck() {
             </section>
             {r.nativeCurrency && (
               <p className="text-xs text-muted">
-                Die Kriterien rechnen in der Originalwährung ({r.nativeCurrency}), damit Wechselkurse die Ampel nicht verfälschen – Beträge oben in {r.nativeCurrency}.
+                Dividende, Ausschüttungsquote und Wachstum rechnen in der Originalwährung ({r.nativeCurrency}), damit Wechselkurse die Ampel nicht verfälschen – Beträge dort in {r.nativeCurrency}. Die EMA 200 rechnet wie im Kurschart in Euro.
               </p>
             )}
           </TabPanel>

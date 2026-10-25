@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDividends, checkGrowth, checkPayout, dcfPerShare, dcfValue, expectedYield, fairValueByYield, recentFundamentals, smoothedGrowth } from "./check";
+import { checkDividends, checkGrowth, checkPayout, checkTrend, dcfPerShare, dcfValue, expectedYield, fairValueByYield, recentFundamentals, smoothedGrowth } from "./check";
 import type { MarketData } from "./data/types";
 
 const yearly = (from: number, amounts: number[]) => amounts.map((a, i) => ({ date: `${from + i}-05-10`, amount: a }));
@@ -224,5 +224,23 @@ describe("recentFundamentals", () => {
       { date: "2023-12-31", eps: 2, fcf: 6 },
       { date: "2025-12-31", eps: 3, fcf: 7 },
     ]);
+  });
+});
+
+describe("checkTrend", () => {
+  const t = (price: number) => checkTrend({ price, ema200: 100, asOf: "2026-10-23", currency: "EUR" });
+
+  it("grün über der EMA 200, orange bis 5 % darunter, rot darunter", () => {
+    expect(t(108).light).toBe("GREEN");
+    expect(t(108).verdict).toBe("Sehr gut – 8,0 % über der EMA 200");
+    expect(t(100).light).toBe("ORANGE");
+    expect(t(95).light).toBe("ORANGE");
+    expect(t(94.9).light).toBe("RED");
+    expect(t(94.9).verdict).toBe("5,1 % unter der EMA 200");
+  });
+
+  it("grau ohne EMA", () => {
+    expect(checkTrend(undefined).light).toBe("GREY");
+    expect(checkTrend({ price: 10, ema200: 0, asOf: "2026-10-23", currency: "EUR" }).light).toBe("GREY");
   });
 });

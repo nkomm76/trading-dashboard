@@ -6,7 +6,7 @@ import { DEFAULT_THRESHOLDS, type DcfAssumptions, type LightColor } from "./rati
 // Schnellbewertung vor dem Kauf. Jede Prüfung ist GREY, wenn die Datenbasis fehlt – nichts wird geschätzt.
 
 export type CheckItem = {
-  key: "dividends" | "payout" | "growth";
+  key: "dividends" | "payout" | "growth" | "trend";
   title: string;
   light: LightColor;
   verdict: string;
@@ -160,6 +160,20 @@ export function checkGrowth(annual: StatementRow[], note?: string): CheckItem {
   if (down === 0) return { ...base, light: "ORANGE", verdict: "Gewachsen, aber nur eine Kennzahl verfügbar", details };
   if (up === 1) return { ...base, light: "ORANGE", verdict: rev && rev.last > rev.first ? "Umsatz gewachsen, Gewinn nicht" : "Gewinn gewachsen, Umsatz nicht", details };
   return { ...base, light: "RED", verdict: "Umsatz und Gewinn nicht gewachsen", details };
+}
+
+export type TrendInput = { price: number; ema200: number; asOf: string; currency: string };
+
+/** Trend: Kurs über der EMA 200 (Tageskurse)? Bis 5 % darunter orange, damit kleine Rücksetzer die Ampel nicht kippen. */
+export function checkTrend(t: TrendInput | undefined): CheckItem {
+  const base = { key: "trend" as const, title: "Kurs über der EMA 200 (Trend)" };
+  if (!t || !(t.ema200 > 0)) return { ...base, light: "GREY", verdict: "Keine Daten zur EMA 200", details: ["Zu wenige Tageskurse in der Quelle"] };
+  const money = (v: number) => `${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t.currency === "EUR" ? "€" : t.currency}`;
+  const gap = t.price / t.ema200 - 1;
+  const details = [`Kurs ${money(t.price)}, EMA 200 ${money(t.ema200)} (Stand ${deDate(t.asOf)})`, "Grün: über der Linie; orange: bis 5 % darunter; rot: mehr als 5 % darunter"];
+  if (gap > 0) return { ...base, light: "GREEN", verdict: `Sehr gut – ${pct(gap)} über der EMA 200`, details };
+  if (t.price >= t.ema200 * 0.95) return { ...base, light: "ORANGE", verdict: `Knapp darunter – ${pct(-gap)} unter der EMA 200`, details };
+  return { ...base, light: "RED", verdict: `${pct(-gap)} unter der EMA 200`, details };
 }
 
 /** Erwartete Jahresdividende: letzte Zahlung auf ein Jahr hochgerechnet (nur bei regelmäßigem Rhythmus und aktueller Zahlung). */
@@ -445,6 +459,8 @@ export function evaluateCheck(
     toTradingCurrency?: (v: number) => number | undefined;
     asOf?: string;
     dcf?: DcfAssumptions;
+    /** Kurs und EMA 200 wie im Kurschart (in Euro) */
+    trend?: TrendInput;
   } = {},
 ): CheckResult {
   const asOf = opts.asOf ?? new Date().toISOString().slice(0, 10);
@@ -452,6 +468,7 @@ export function evaluateCheck(
     checkDividends(market.dividends, Number(asOf.slice(0, 4)), asOf),
     checkPayout(market, opts.toTradingCurrency),
     checkGrowth(opts.growthRows ?? market.annual, opts.growthNote),
+    checkTrend(opts.trend),
   ];
   const rated = items.filter((i) => i.light !== "GREY");
   const overall = rated.length ? rated.reduce<LightColor>((w, i) => (ORDER[i.light] > ORDER[w] ? i.light : w), "GREEN") : "GREY";
