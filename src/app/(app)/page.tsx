@@ -80,7 +80,7 @@ export default async function DashboardPage() {
 
       <p className="text-xs text-muted">
         Fahre über einen Wert, um Quelle und Stichtag zu sehen. „–“ bedeutet: keine Quelle verfügbar. Hochgestellt „Jahr“ = Jahreswert, weil keine Quartalszahl vorliegt.
-        Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung. Kauf- und Verkaufsbeträge in Fremdwährung werden zum aktuellen Wechselkurs in EUR umgerechnet; realisierte Gewinne nach der Durchschnittskostenmethode inkl. Gebühren.
+        Die Ampel ist eine mechanische Auswertung eigener Regeln, keine Anlageberatung. Kauf- und Verkaufskurse sind in EUR laut Abrechnung erfasst; Kurse und Dividenden in Fremdwährung werden zum aktuellen EZB-Kurs in EUR umgerechnet, Wechselkursgewinne und -verluste stecken deshalb im Gewinn/Verlust. Realisierte Gewinne nach der Durchschnittskostenmethode inkl. Gebühren.
       </p>
     </div>
   );
