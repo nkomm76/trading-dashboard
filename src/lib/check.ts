@@ -205,15 +205,19 @@ export function fairValueByYield(
   if (!exp || !closes?.length || !divs.length) return undefined;
   const end = Date.parse(asOf);
   const firstDiv = Date.parse(divs[0].date);
+  // Verschiebt sich der Ex-Tag um ein paar Tage nach vorn, fallen zwei Jahresdividenden (bzw. 5 Quartale)
+  // in dasselbe 12-Monats-Fenster; deshalb höchstens so viele Zahlungen wie der Rhythmus vorsieht
+  const perYear = PER_YEAR[detectFrequency(divs, asOf) ?? "unregelmäßig"];
   const yields: { date: string; y: number }[] = [];
   for (const c of closes) {
     const t = Date.parse(c.date);
     // Nur Monate, für die eine volle 12-Monats-Dividendenhistorie vorliegt
     if (t > end || t < end - 5 * YEAR_MS || t - YEAR_MS < firstDiv - 31 * 86_400_000 || c.close <= 0) continue;
-    const ttm = divs.filter((d) => {
+    const inWindow = divs.filter((d) => {
       const dt = Date.parse(d.date);
       return dt <= t && dt > t - YEAR_MS;
-    }).reduce((a, d) => a + d.amount, 0);
+    });
+    const ttm = (perYear ? inWindow.slice(-perYear) : inWindow).reduce((a, d) => a + d.amount, 0);
     if (ttm > 0) yields.push({ date: c.date, y: ttm / c.close });
   }
   // Mindestens 3 Jahre Monatswerte, sonst ist der Mittelwert nicht belastbar

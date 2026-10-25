@@ -104,6 +104,14 @@ describe("fairValueByYield", () => {
     expect(f.deviation).toBeLessThan(0);
   });
 
+  it("zählt eine Jahresdividende nicht doppelt, wenn der Ex-Tag früher liegt als im Vorjahr", () => {
+    // Ex-Tage rücken jedes Jahr ein paar Tage nach vorn; Kurs konstant 50, Dividende 2 → 4 %
+    const annual = ["2019-05-20", "2020-05-15", "2021-05-10", "2022-05-05", "2023-04-28", "2024-04-26", "2025-04-24", "2026-04-22"].map((date) => ({ date, amount: 2 }));
+    const f = fairValueByYield(annual, closes(() => 50), 50, "2026-10-01")!;
+    expect(f.maxYield).toBeCloseTo(0.04);
+    expect(f.value).toBeCloseTo(50);
+  });
+
   it("kein Wert bei zu kurzer Historie oder ohne aktuelle Dividende", () => {
     expect(fairValueByYield(divs.filter((d) => d.date >= "2024-06"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
     expect(fairValueByYield(divs.filter((d) => d.date < "2024"), closes(() => 50), 50, "2026-10-01")).toBeUndefined();
