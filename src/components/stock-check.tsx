@@ -230,7 +230,7 @@ export function StockCheck() {
                 currency={r.currency}
                 fairLines={[
                   ...(r.fairValue ? [{ label: "Dividende", value: r.fairValue.value, color: "var(--accent)" }] : []),
-                  ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)" }] : []),
+                  ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)", band: [r.dcf.low, r.dcf.high] as [number, number] }] : []),
                 ]}
               />
             </section>

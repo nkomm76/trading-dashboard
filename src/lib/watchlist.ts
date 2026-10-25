@@ -11,6 +11,8 @@ export type WatchSummary = {
   expectedYield?: number;
   fairValue?: number;
   dcf?: number;
+  /** DCF-Spanne (Abzinsung ±1 Prozentpunkt) */
+  dcfRange?: [number, number];
 };
 
 export function summarize(r: CheckResult): WatchSummary {
@@ -22,6 +24,7 @@ export function summarize(r: CheckResult): WatchSummary {
     expectedYield: r.expectedYield?.value,
     fairValue: r.fairValue?.value,
     dcf: r.dcf && !("unavailable" in r.dcf) ? r.dcf.value : undefined,
+    dcfRange: r.dcf && !("unavailable" in r.dcf) ? [r.dcf.low, r.dcf.high] : undefined,
   };
 }
 

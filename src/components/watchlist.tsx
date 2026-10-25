@@ -130,7 +130,7 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
                 currency={current.currency}
                 fairLines={[
                   ...(s?.fairValue !== undefined ? [{ label: "Dividende", value: s.fairValue, color: "var(--accent)" }] : []),
-                  ...(s?.dcf !== undefined ? [{ label: "DCF", value: s.dcf, color: "var(--orange)" }] : []),
+                  ...(s?.dcf !== undefined ? [{ label: "DCF", value: s.dcf, color: "var(--orange)", band: s.dcfRange }] : []),
                 ]}
               />
               {s && s.items.length > 0 && (

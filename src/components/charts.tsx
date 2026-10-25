@@ -109,7 +109,8 @@ const RANGE_LABELS: [Range, string][] = [
 ];
 type PricePoint = { time: number; close: number };
 
-export type FairLine = { label: string; value: number; color: string };
+/** Fairer Wert als Linie; optional mit Spanne, die als Band hinterlegt wird. */
+export type FairLine = { label: string; value: number; color: string; band?: [number, number] };
 
 // Gleitende Durchschnitte: EMA 200 aus Tageskursen, EMA 20 aus Wochenkursen
 const EMAS = [
@@ -215,8 +216,11 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
   const hi = Math.max(...closes, ...emaValues);
   const shown = closes.length ? fairLines.filter((f) => f.value > lo * 0.5 && f.value < hi * 2) : [];
   const hidden = closes.length ? fairLines.filter((f) => !shown.includes(f)) : [];
-  const yLo = Math.min(lo, ...shown.map((f) => f.value));
-  const yHi = Math.max(hi, ...shown.map((f) => f.value));
+  // Bänder nur so weit einbeziehen, wie sie im erlaubten Bereich liegen; der Rest wird abgeschnitten
+  const inRange = (v: number) => v > lo * 0.5 && v < hi * 2;
+  const bandEdges = shown.flatMap((f) => (f.band ?? []).filter(inRange));
+  const yLo = Math.min(lo, ...shown.map((f) => f.value), ...bandEdges);
+  const yHi = Math.max(hi, ...shown.map((f) => f.value), ...bandEdges);
 
   return (
     <div>
@@ -306,6 +310,11 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
                 .map((e) => (
                   <Line key={e.key} type="monotone" dataKey={e.key} stroke={e.color} strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={false} />
                 ))}
+              {shown
+                .filter((f) => f.band)
+                .map((f) => (
+                  <ReferenceArea key={`${f.label}-band`} y1={f.band![0]} y2={f.band![1]} fill={f.color} fillOpacity={0.1} stroke="none" ifOverflow="hidden" />
+                ))}
               {shown.map((f, i) => (
                 <ReferenceLine
                   key={f.label}
@@ -322,6 +331,7 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
       </div>
       <p className="mt-1 text-xs text-muted">
         Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert; gleitende Durchschnitte ab 6 Monaten" : ""}.
+        {shown.some((f) => f.band) && ` Band: Spanne des ${shown.filter((f) => f.band).map((f) => f.label).join(" und ")}-Werts.`}
         {hidden.length > 0 && ` ${hidden.map((f) => f.label).join(" und ")} außerhalb des dargestellten Kursbereichs.`}
       </p>
     </div>
