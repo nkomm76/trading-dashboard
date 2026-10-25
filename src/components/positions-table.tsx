@@ -33,8 +33,8 @@ const COLS: Col[] = [
     ),
   },
   { key: "qty", label: "Stück", sort: (p) => p.quantity, render: (p) => <span className="tabular">{fmtNum(p.quantity, p.quantity % 1 ? 3 : 0)}</span> },
-  { key: "avg", label: "Ø Kauf", sort: (p) => p.avgCost, render: (p) => <span className="tabular">{fmtMoney(p.avgCost, p.currency)}</span> },
-  { key: "price", label: "Kurs", title: "Letzter Schlusskurs", sort: (p) => p.metrics.price?.value, render: (p) => <Value s={p.metrics.price} format={(v) => fmtMoney(v, p.currency)} /> },
+  { key: "avg", label: "Ø Kauf", sort: (p) => p.avgCost, render: (p) => <span className="tabular">{fmtMoney(p.avgCost)}</span> },
+  { key: "price", label: "Kurs", title: "Letzter Schlusskurs", sort: (p) => p.priceEur?.value, render: (p) => <Value s={p.priceEur} format={(v) => fmtMoney(v)} /> },
   { key: "value", label: "Wert €", sort: (p) => p.valueEur, render: (p) => <span className="tabular">{fmtMoney(p.valueEur)}</span> },
   {
     key: "gain",
@@ -61,7 +61,7 @@ const COLS: Col[] = [
       </>
     ),
   },
-  { key: "fcf", label: "FCF", title: "Free Cashflow (12 Monate)", sort: (p) => p.metrics.fcfTTM?.value, render: (p) => <Value s={p.metrics.fcfTTM} format={(v) => fmtBig(v, p.metrics.financialCurrency)} /> },
+  { key: "fcf", label: "FCF", title: "Free Cashflow (12 Monate)", sort: (p) => p.fcfEur?.value, render: (p) => <Value s={p.fcfEur} format={(v) => fmtBig(v, "EUR")} /> },
   { key: "eps", label: "EPS", title: "Gewinn je Aktie (12 Monate)", sort: (p) => p.metrics.epsTTM?.value, render: (p) => <Value s={p.metrics.epsTTM} format={(v) => fmtNum(v)} /> },
   { key: "outlook", label: "Ausblick", sort: (p) => p.outlookStatus, render: (p) => (p.outlookStatus ? OUTLOOK[p.outlookStatus] : <span className="text-muted">–</span>) },
 ];

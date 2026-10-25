@@ -142,7 +142,12 @@ export function StockCheck() {
               <div>
                 <dt className="text-xs text-muted">Aktueller Kurs</dt>
                 <dd className="tabular text-lg font-semibold">{r.price ? fmtMoney(r.price.value, r.currency) : "–"}</dd>
-                {r.price && <dd className="text-xs text-muted">Stand {fmtDate(r.price.asOf)}</dd>}
+                {r.price && (
+                  <dd className="text-xs text-muted">
+                    Stand {fmtDate(r.price.asOf)}
+                    {r.nativeCurrency && ` · aus ${r.nativeCurrency} umgerechnet`}
+                  </dd>
+                )}
               </div>
               <div>
                 <dt className="text-xs text-muted">Erwartete Dividendenrendite</dt>
@@ -223,6 +228,11 @@ export function StockCheck() {
                 </div>
               ))}
             </section>
+            {r.nativeCurrency && (
+              <p className="text-xs text-muted">
+                Die Kriterien rechnen in der Originalwährung ({r.nativeCurrency}), damit Wechselkurse die Ampel nicht verfälschen – Beträge oben in {r.nativeCurrency}.
+              </p>
+            )}
           </TabPanel>
           <TabPanel id="chart" tab={tab} visited={visited}>
             <section className="card p-5">
@@ -261,14 +271,19 @@ export function StockCheck() {
               ) : (
                 <p className="text-sm text-muted">Keine Dividendenhistorie verfügbar.</p>
               )}
-              <p className="mt-1 text-xs text-muted">Letzte 10 abgeschlossene Jahre, nach Ex-Tag. Quelle: Yahoo Finance.</p>
+              <p className="mt-1 text-xs text-muted">
+                Letzte 10 abgeschlossene Jahre, nach Ex-Tag{r.nativeCurrency && `; jede Zahlung zum Wechselkurs ihres Ex-Tags von ${r.nativeCurrency} in Euro umgerechnet`}. Quelle: Yahoo
+                Finance{r.nativeCurrency && ", Wechselkurse Yahoo Finance"}.
+              </p>
             </section>
           </TabPanel>
           <TabPanel id="fundamental" tab={tab} visited={visited}>
             <section className="card p-5">
               <h3 className="mb-3 text-sm font-semibold">EPS und Free Cashflow (3 Jahre)</h3>
               <EpsFcfChart key={r.symbol} quarterly={r.fundamentals.quarterly} annual={r.fundamentals.annual} currency={r.financialCurrency ?? r.currency} />
-              <p className="mt-1 text-xs text-muted">EPS je Aktie, Free Cashflow gesamt (rechte Achse). Quelle: Yahoo Finance{r.currency === "USD" ? ", ergänzt um SEC" : ""}.</p>
+              <p className="mt-1 text-xs text-muted">EPS je Aktie, Free Cashflow gesamt (rechte Achse). Quelle: Yahoo Finance{(r.nativeCurrency ?? r.currency) === "USD" ? ", ergänzt um SEC" : ""}
+                {r.nativeCurrency && "; je Periode zum Wechselkurs ihres Stichtags in Euro umgerechnet"}.
+              </p>
             </section>
           </TabPanel>
           <TabPanel id="fair" tab={tab} visited={visited}>

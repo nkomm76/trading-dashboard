@@ -9,6 +9,8 @@ import { Value } from "@/components/value";
 import { DividendChart, EpsFcfChart } from "@/components/charts";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
+import { toEur } from "@/lib/data/fx";
+import { getFxRates } from "@/lib/settings";
 
 type Series = {
   dividendsByYear: { year: number; total: number }[];
@@ -41,17 +43,30 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
   const cur = stock.currency;
   const pos = computePosition(stock.purchases.map(toTx));
   const fcur = m.financialCurrency;
+  // Anzeige in Euro zum aktuellen EZB-Kurs; ohne Kurs in Originalwährung
+  const rates = (await getFxRates())?.rates;
+  const inEur = (v: number, from = cur) => (rates ? toEur(v, from, rates) : undefined);
+  const money = (v: number, from = cur) => {
+    const e = inEur(v, from);
+    return e === undefined ? fmtMoney(v, from) : fmtMoney(e);
+  };
+  const big = (v: number) => {
+    const e = inEur(v, fcur ?? cur);
+    return e === undefined ? fmtBig(v, fcur) : fmtBig(e, "EUR");
+  };
+  const eurRows = (rows: Series["annual"]) =>
+    rows.map((r) => ({ ...r, eps: r.eps === null ? null : (inEur(r.eps, fcur ?? cur) ?? r.eps), fcf: r.fcf === null ? null : (inEur(r.fcf, fcur ?? cur) ?? r.fcf) }));
 
   const groups: { title: string; rows: [string, Sourced<unknown> | undefined, (v: never) => string][] }[] = [
     {
       title: "Dividende",
       rows: [
-        ["Dividende (12 Monate)", m.dividendTTM, (v: number) => fmtMoney(v, cur)],
+        ["Dividende (12 Monate)", m.dividendTTM, (v: number) => money(v)],
         ["Dividendenrendite", m.dividendYield, (v: number) => fmtPct(v)],
         ["Yield on Cost", m.yieldOnCost, (v: number) => fmtPct(v)],
         ["Ausschüttungsrhythmus", m.frequency, (v: string) => v],
         ["Monate der Ex-Tage", m.exMonths, (v: string[]) => fmtMonths(v)],
-        ["Letzte Zahlung", m.lastDividend, (v: { date: string; amount: number }) => `${fmtDate(v.date)} · ${fmtMoney(v.amount, cur)}`],
+        ["Letzte Zahlung", m.lastDividend, (v: { date: string; amount: number }) => `${fmtDate(v.date)} · ${money(v.amount)}`],
         ["Nächster Ex-Tag", m.nextExDividend, (v: string) => fmtDate(v)],
         ["Dividendenwachstum CAGR 3 J.", m.dividendCagr3, (v: number) => fmtPct(v)],
         ["Dividendenwachstum CAGR 5 J.", m.dividendCagr5, (v: number) => fmtPct(v)],
@@ -71,12 +86,12 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
     {
       title: "Aktuelle Zahlen",
       rows: [
-        ["Kurs", m.price, (v: number) => fmtMoney(v, cur)],
-        ["EPS (12 Monate)", m.epsTTM, (v: number) => fmtNum(v)],
-        ["EPS letzter Bericht", m.epsLatest, (v: number) => fmtNum(v)],
+        ["Kurs", m.price, (v: number) => money(v)],
+        ["EPS (12 Monate)", m.epsTTM, (v: number) => money(v, fcur ?? cur)],
+        ["EPS letzter Bericht", m.epsLatest, (v: number) => money(v, fcur ?? cur)],
         ["EPS ggü. Vorjahresquartal", m.epsLatestYoY, (v: number) => (v > 0 ? "+" : "") + fmtPct(v)],
-        ["Free Cashflow (12 Monate)", m.fcfTTM, (v: number) => fmtBig(v, fcur)],
-        ["Free Cashflow letzter Bericht", m.fcfLatest, (v: number) => fmtBig(v, fcur)],
+        ["Free Cashflow (12 Monate)", m.fcfTTM, (v: number) => big(v)],
+        ["Free Cashflow letzter Bericht", m.fcfLatest, (v: number) => big(v)],
       ],
     },
   ];
@@ -89,6 +104,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
           <h1 className="text-xl font-semibold">{stock.name}</h1>
           <p className="text-sm text-muted">
             {stock.symbol} · {stock.exchange ?? "–"} · {stock.sector ?? "Sektor unbekannt"} · Datenstand {fmtDate(stock.snapshots[0]?.date.toISOString())}
+            {rates && cur !== "EUR" && ` · Beträge in € (aus ${cur} zum aktuellen EZB-Kurs)`}
           </p>
         </div>
       </div>
@@ -175,12 +191,16 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
       {series && (
         <section className="grid gap-4 lg:grid-cols-2">
           <div className="card p-5">
-            <h2 className="mb-3 font-semibold">Dividende je Aktie pro Jahr ({cur})</h2>
-            {series.dividendsByYear.length ? <DividendChart data={series.dividendsByYear} currentYear={new Date().getFullYear()} /> : <p className="text-sm text-muted">Keine Dividendenhistorie verfügbar.</p>}
+            <h2 className="mb-3 font-semibold">Dividende je Aktie pro Jahr ({rates ? "€" : cur})</h2>
+            {series.dividendsByYear.length ? (
+              <DividendChart data={series.dividendsByYear.map((d) => ({ ...d, total: inEur(d.total) ?? d.total }))} currentYear={new Date().getFullYear()} />
+            ) : (
+              <p className="text-sm text-muted">Keine Dividendenhistorie verfügbar.</p>
+            )}
           </div>
           <div className="card p-5">
             <h2 className="mb-3 font-semibold">EPS und Free Cashflow</h2>
-            <EpsFcfChart quarterly={series.quarterly} annual={series.annual} currency={fcur} />
+            <EpsFcfChart quarterly={eurRows(series.quarterly)} annual={eurRows(series.annual)} currency={rates ? "EUR" : fcur} />
           </div>
         </section>
       )}
@@ -194,7 +214,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
         </div>
         <p className="mb-3 text-sm text-muted">
           {pos.quantity > 0
-            ? `Bestand ${fmtNum(pos.quantity, pos.quantity % 1 ? 3 : 0)} Stück · Ø Einstand ${fmtMoney(pos.avgCost, cur)}`
+            ? `Bestand ${fmtNum(pos.quantity, pos.quantity % 1 ? 3 : 0)} Stück · Ø Einstand ${fmtMoney(pos.avgCost)}`
             : "Komplett verkauft – Kennzahlen zeigen den letzten Datenstand und werden nicht mehr aktualisiert."}
         </p>
         {stock.dividends.length > 0 && (
@@ -208,7 +228,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
           {stock.purchases.map((p) => (
             <li key={p.id} className="tabular">
               <span className={p.type === "SELL" ? "text-light-orange" : "text-light-green"}>{p.type === "SELL" ? "Verkauf" : "Kauf"}</span>{" "}
-              {fmtDate(p.date.toISOString())}: {fmtNum(Number(p.quantity), Number(p.quantity) % 1 ? 3 : 0)} Stück zu {fmtMoney(Number(p.price), cur)}
+              {fmtDate(p.date.toISOString())}: {fmtNum(Number(p.quantity), Number(p.quantity) % 1 ? 3 : 0)} Stück zu {fmtMoney(Number(p.price))}
               {Number(p.fees) > 0 && ` + ${fmtMoney(Number(p.fees))} Gebühren`}
               {p.note && <span className="text-muted"> – {p.note}</span>}
             </li>

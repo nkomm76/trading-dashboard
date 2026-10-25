@@ -1,5 +1,7 @@
 import "server-only";
 import { evaluateCheck, type CheckResult } from "./check";
+import { toEurView } from "./check-eur";
+import { toEurConverter } from "./data/fx-history";
 import { convert, fetchEcbRates } from "./data/fx";
 import { fetchEulerpoolAnnual } from "./data/eulerpool";
 import { extendHistory, type Extension } from "./data/eulerpool-normalize";
@@ -95,7 +97,7 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   if (growthExt.addedYears.length || dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
 
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
-  const result = evaluateCheck(market, {
+  const native = evaluateCheck(market, {
     growthRows: growthExt.rows,
     growthNote: describe(growthExt),
     dcfHistory: dcfExt ? { annual: dcfExt.rows, note: describe(dcfExt) } : dcfBase && { annual: dcfBase.rows },
@@ -105,6 +107,9 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
     dcf: (await getThresholds()).dcf,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
+  // Anzeige in Euro (Tageskurse); bewertet wird in Originalwährung
+  const [trade, fin] = await Promise.all([toEurConverter(market.currency), toEurConverter(market.financialCurrency ?? market.currency)]);
+  const result = trade && fin ? toEurView(native, market.dividends, trade, fin) : native;
   const res = { result, listings, isin };
   recent.set(result.symbol, { at: Date.now(), res });
   for (const [k, v] of recent) if (Date.now() - v.at >= CACHE_MS) recent.delete(k);

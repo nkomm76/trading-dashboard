@@ -20,6 +20,8 @@ export type CheckResult = {
   name: string;
   currency: string;
   financialCurrency?: string;
+  /** Handelswährung der Aktie, wenn die Beträge für die Anzeige in Euro umgerechnet wurden */
+  nativeCurrency?: string;
   exchange?: string;
   sector?: string;
   price?: { value: number; asOf: string };

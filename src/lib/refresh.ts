@@ -51,7 +51,8 @@ export async function refreshStock(stockId: number, rates: Record<string, number
   }
 
   const pos = computePosition(stock.purchases.map(toTx));
-  const avgCost = pos.quantity > 0 ? pos.avgCost : undefined;
+  // Einstand ist in Euro erfasst, die Dividende kommt in Handelswährung: für Yield on Cost zum aktuellen Kurs angleichen
+  const avgCost = pos.quantity > 0 && rates ? convert(pos.avgCost, "EUR", market.currency, rates) : undefined;
 
   const metrics = computeMetrics({
     market,

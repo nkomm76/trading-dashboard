@@ -139,7 +139,7 @@ export function fcfOf(r: StatementRow): number | undefined {
 
 export type MetricInput = {
   market: MarketData;
-  avgCost?: number; // Ø-Kaufkurs in Handelswährung
+  avgCost?: number; // Ø-Kaufkurs, in Handelswährung umgerechnet
   /** Rechnet Bilanzwährung → Handelswährung um (für EPS-Vergleich mit Dividende) */
   toTradingCurrency?: (amount: number) => number | undefined;
   asOf?: string;

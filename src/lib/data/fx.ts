@@ -1,5 +1,8 @@
 import "server-only";
 import type { Sourced } from "./types";
+import { normalizeCurrency } from "../fx-convert";
+
+export { normalizeCurrency };
 
 // EZB-Referenzkurse: 1 EUR = x Fremdwährung
 export async function fetchEcbRates(): Promise<Sourced<Record<string, number>> | undefined> {
@@ -11,14 +14,6 @@ export async function fetchEcbRates(): Promise<Sourced<Record<string, number>> |
   const time = xml.match(/time='(\d{4}-\d{2}-\d{2})'/)?.[1];
   if (!time) return undefined;
   return { value: rates, source: "EZB", asOf: time };
-}
-
-// Normalisiert Kurs-Notierungen in Unterwährungen (z. B. London in Pence)
-export function normalizeCurrency(currency: string): { code: string; factor: number } {
-  if (currency === "GBp" || currency === "GBX") return { code: "GBP", factor: 0.01 };
-  if (currency === "ZAc") return { code: "ZAR", factor: 0.01 };
-  if (currency === "ILA") return { code: "ILS", factor: 0.01 };
-  return { code: currency.toUpperCase(), factor: 1 };
 }
 
 /** Rechnet einen Betrag in EUR um; undefined, wenn kein Kurs vorliegt. */

@@ -75,7 +75,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                       {p.stock.name} <span className="text-xs text-muted">{p.stock.symbol}</span>
                     </td>
                     <td className="tabular px-4 py-2 text-right">{fmtNum(Number(p.quantity), Number(p.quantity) % 1 ? 3 : 0)}</td>
-                    <td className="tabular whitespace-nowrap px-4 py-2 text-right">{fmtMoney(Number(p.price), p.stock.currency)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-2 text-right">{fmtMoney(Number(p.price))}</td>
                     <td className="tabular whitespace-nowrap px-4 py-2 text-right">{fmtMoney(Number(p.fees))}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">
                       <a href={`/kauf?edit=${p.id}`} className="mr-3 text-accent">Bearbeiten</a>

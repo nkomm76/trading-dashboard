@@ -16,7 +16,7 @@ describe("computePosition", () => {
     const p = computePosition([buy("2025-01-01", 10, 100, 4), buy("2025-06-01", 10, 120, 4), sell("2026-01-01", 5, 150, 3)]);
     expect(p.quantity).toBe(15);
     expect(p.avgCost).toBe(110); // Ø bleibt beim Verkauf gleich
-    expect(p.realizedTrading).toBe((150 - 110) * 5);
+    expect(p.realized).toBe((150 - 110) * 5);
     expect(p.realizedFeesEur).toBeCloseTo(8 * 0.25 + 3);
     expect(p.openFeesEur).toBeCloseTo(6);
   });
@@ -25,7 +25,7 @@ describe("computePosition", () => {
     const p = computePosition([buy("2025-01-01", 10, 100), sell("2026-01-01", 10, 90)]);
     expect(p.quantity).toBe(0);
     expect(p.avgCost).toBe(0);
-    expect(p.realizedTrading).toBe(-100);
+    expect(p.realized).toBe(-100);
     expect(p.soldQuantity).toBe(10);
     expect(p.oversold).toBeUndefined();
   });
@@ -45,14 +45,14 @@ describe("closedCycles", () => {
   it("liefert abgeschlossene Zyklen mit Durchschnittskursen", () => {
     const c = closedCycles([buy("2024-01-01", 10, 100, 2), buy("2024-03-01", 10, 120, 2), sell("2025-01-01", 5, 150, 1), sell("2025-06-01", 15, 130, 1)]);
     expect(c).toHaveLength(1);
-    expect(c[0]).toMatchObject({ firstBuy: "2024-01-01", lastSell: "2025-06-01", boughtQuantity: 20, avgBuyPrice: 110, avgSellPrice: 135, costTrading: 2200, feesEur: 6 });
-    expect(c[0].realizedTrading).toBe(5 * 40 + 15 * 20);
+    expect(c[0]).toMatchObject({ firstBuy: "2024-01-01", lastSell: "2025-06-01", boughtQuantity: 20, avgBuyPrice: 110, avgSellPrice: 135, cost: 2200, feesEur: 6 });
+    expect(c[0].realized).toBe(5 * 40 + 15 * 20);
   });
 
   it("trennt einen Rückkauf nach Komplettverkauf in einen neuen Zyklus", () => {
     const txs = [buy("2024-01-01", 10, 100), sell("2024-06-01", 10, 110), buy("2025-01-01", 5, 90), sell("2025-03-01", 5, 80), buy("2025-09-01", 3, 70)];
     const c = closedCycles(txs);
-    expect(c.map((x) => [x.firstBuy, x.lastSell, x.realizedTrading])).toEqual([
+    expect(c.map((x) => [x.firstBuy, x.lastSell, x.realized])).toEqual([
       ["2024-01-01", "2024-06-01", 100],
       ["2025-01-01", "2025-03-01", -50],
     ]);

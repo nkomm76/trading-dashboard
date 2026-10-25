@@ -135,14 +135,14 @@ export async function fetchPriceHistory(symbol: string, range: ChartRange): Prom
 
 /** Tagesschlusskurse, dividendenbereinigt (adjclose), ab dem angegebenen Datum. */
 /** Schlusskurse wie im Kurschart (nicht dividendenbereinigt) für gleitende Durchschnitte; täglich inkl. aktuellem Kurs. */
-export async function fetchCloses(symbol: string, from: Date, interval: "1d" | "1wk"): Promise<TimedPoint[]> {
+export async function fetchCloses(symbol: string, from: Date, interval: "1d" | "1wk"): Promise<{ currency?: string; points: TimedPoint[] }> {
   const chart = await yf.chart(symbol, { period1: from, interval, includePrePost: false });
   const points = chart.quotes
     .filter((q) => typeof q.close === "number")
     .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }));
   // Die letzte Wochenkerze enthält den aktuellen Kurs schon
   if (interval === "1d") appendLatest(points, chart.meta, true);
-  return points;
+  return { currency: chart.meta.currency, points };
 }
 
 export async function fetchAdjustedDaily(symbol: string, from: Date): Promise<PricePoint[]> {
@@ -165,4 +165,12 @@ export async function fetchPriceWindow(symbol: string, from: number, to: number)
     .map((q) => ({ date: new Date(q.date).toISOString(), time: new Date(q.date).getTime(), close: q.close as number }))
     .filter((p) => p.time >= from && p.time <= to);
   return { currency: chart.meta.currency, points };
+}
+
+/** Wechselkurse je Tag als Einheiten der Fremdwährung je 1 EUR (Yahoo-Kürzel z. B. EURUSD=X). */
+export async function fetchFxDaily(code: string, from: Date): Promise<{ time: number; value: number }[]> {
+  const chart = await yf.chart(`EUR${code}=X`, { period1: from, interval: "1d" });
+  return chart.quotes
+    .filter((q) => typeof q.close === "number" && q.close > 0)
+    .map((q) => ({ time: new Date(q.date).getTime(), value: q.close as number }));
 }

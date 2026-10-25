@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import type { Metrics } from "./metrics";
+import type { Sourced } from "./data/types";
 import type { LightColor, Reason } from "./rating";
 import { getFxRates } from "./settings";
 import { toEur } from "./data/fx";
@@ -13,7 +14,9 @@ export type Position = {
   currency: string;
   sector?: string;
   quantity: number;
-  avgCost: number; // Handelswährung
+  avgCost: number; // EUR (Kaufkurse laut Abrechnung)
+  priceEur?: Sourced; // letzter Kurs, zum aktuellen EZB-Kurs in Euro
+  fcfEur?: Sourced; // Free Cashflow (12 Monate) aus der Bilanzwährung in Euro
   costEur?: number; // inkl. anteiliger Kaufgebühren
   valueEur?: number;
   gainEur?: number;
@@ -54,12 +57,13 @@ export async function loadPortfolio() {
     const metrics = (s.snapshots[0]?.metrics ?? {}) as Metrics;
     const eur = (v: number | undefined) => (v === undefined || !rates ? undefined : toEur(v, s.currency, rates));
 
-    // Umrechnung zum aktuellen Wechselkurs (Kurs am Kauftag wird nicht erfasst)
-    const costTradingEur = eur(pos.costTrading);
-    const costEur = pos.quantity > 0 && costTradingEur !== undefined ? costTradingEur + pos.openFeesEur : undefined;
+    // Käufe und Verkäufe sind in Euro erfasst; nur Kurs und Dividende kommen in Handelswährung und werden umgerechnet
+    const costEur = pos.quantity > 0 ? pos.cost + pos.openFeesEur : undefined;
     const valueEur = pos.quantity > 0 && metrics.price ? eur(metrics.price.value * pos.quantity) : undefined;
     const annualDividendEur = pos.quantity > 0 && metrics.dividendTTM ? eur(metrics.dividendTTM.value * pos.quantity) : undefined;
-    const realizedTradingEur = pos.soldQuantity > 0 ? eur(pos.realizedTrading) : undefined;
+    const priceEur = metrics.price && eur(metrics.price.value);
+    const fcfCur = metrics.financialCurrency ?? s.currency;
+    const fcfEur = metrics.fcfTTM && rates ? toEur(metrics.fcfTTM.value, fcfCur, rates) : undefined;
 
     return {
       stockId: s.id,
@@ -69,10 +73,12 @@ export async function loadPortfolio() {
       sector: s.sector ?? undefined,
       quantity: pos.quantity,
       avgCost: pos.avgCost,
+      priceEur: metrics.price && priceEur !== undefined ? { ...metrics.price, value: priceEur, note: `aus ${s.currency} zum EZB-Kurs umgerechnet` } : undefined,
+      fcfEur: metrics.fcfTTM && fcfEur !== undefined ? { ...metrics.fcfTTM, value: fcfEur, note: `aus ${fcfCur} zum EZB-Kurs umgerechnet` } : undefined,
       costEur,
       valueEur,
       gainEur: valueEur !== undefined && costEur !== undefined ? valueEur - costEur : undefined,
-      realizedEur: realizedTradingEur === undefined ? undefined : realizedTradingEur - pos.realizedFeesEur,
+      realizedEur: pos.soldQuantity > 0 ? pos.realized - pos.realizedFeesEur : undefined,
       annualDividendEur,
       metrics,
       snapshotDate: s.snapshots[0]?.date.toISOString().slice(0, 10),

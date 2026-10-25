@@ -43,7 +43,10 @@ export default async function DividendsPage() {
                 <div className="min-w-48 flex-1">
                   <Link href={`/aktie/${s.stockId}`} className="font-medium hover:text-accent">{s.name}</Link>
                   <div className="tabular text-xs text-muted">
-                    Ex-Tag {fmtDate(s.exDate)} · {fmtNum(s.quantity, s.quantity % 1 ? 3 : 0)} × {fmtMoney(s.perShare, s.currency)} = {fmtMoney(s.grossTrading, s.currency)} brutto
+                    Ex-Tag {fmtDate(s.exDate)} · {fmtNum(s.quantity, s.quantity % 1 ? 3 : 0)} ×{" "}
+                    {s.grossEurEstimate !== undefined && s.currency !== "EUR"
+                      ? `${fmtMoney(s.grossEurEstimate / s.quantity)} ≈ ${fmtMoney(s.grossEurEstimate)} brutto (${fmtMoney(s.perShare, s.currency)} je Aktie, zum aktuellen EZB-Kurs)`
+                      : `${fmtMoney(s.perShare, s.currency)} = ${fmtMoney(s.grossTrading, s.currency)} brutto`}
                   </div>
                 </div>
                 <SuggestionForm s={s} />

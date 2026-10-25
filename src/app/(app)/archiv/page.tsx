@@ -11,7 +11,7 @@ function duration(days: number) {
 }
 
 export default async function ArchivePage() {
-  const { rows, totals, fxAsOf } = await loadArchive();
+  const { rows, totals } = await loadArchive();
 
   return (
     <div className="space-y-6">
@@ -69,7 +69,7 @@ export default async function ArchivePage() {
                     </td>
                     <td className="tabular whitespace-nowrap px-3 py-2.5 text-right" title={r.buyCount > 1 ? "Durchschnitt aller Käufe" : undefined}>
                       {r.buyCount > 1 && "Ø "}
-                      {fmtMoney(r.avgBuyPrice, r.currency)}
+                      {fmtMoney(r.avgBuyPrice)}
                     </td>
                     <td className="tabular whitespace-nowrap px-3 py-2.5">
                       {fmtDate(r.lastSell)}
@@ -77,7 +77,7 @@ export default async function ArchivePage() {
                     </td>
                     <td className="tabular whitespace-nowrap px-3 py-2.5 text-right" title={r.sellCount > 1 ? "Durchschnitt aller Verkäufe" : undefined}>
                       {r.sellCount > 1 && "Ø "}
-                      {fmtMoney(r.avgSellPrice, r.currency)}
+                      {fmtMoney(r.avgSellPrice)}
                     </td>
                     <td className="tabular px-3 py-2.5 text-right">{fmtNum(r.quantity, r.quantity % 1 ? 3 : 0)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{duration(r.holdingDays)}</td>
@@ -93,7 +93,7 @@ export default async function ArchivePage() {
 
           <p className="text-xs text-muted">
             Kursgewinn nach allen Kauf- und Verkaufsgebühren. Dividenden: bestätigte Nettozahlungen mit Ex-Tag im Haltezeitraum. Rendite = (Kursgewinn + Dividenden) / Kaufbetrag, nicht annualisiert.
-            Beträge in Fremdwährung zum aktuellen EZB-Kurs{fxAsOf && ` vom ${fmtDate(fxAsOf)}`} umgerechnet.
+            Alle Beträge in Euro laut Abrechnung.
           </p>
         </>
       )}

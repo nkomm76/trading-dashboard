@@ -173,11 +173,9 @@ export function PurchaseForm({
           )}
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm">{type === "SELL" ? "Verkaufskurs je Aktie" : "Kaufkurs je Aktie"}</span>
+          <span className="mb-1 block text-sm">{type === "SELL" ? "Verkaufskurs je Aktie (€)" : "Kaufkurs je Aktie (€)"}</span>
           <input className="input" name="price" inputMode="decimal" defaultValue={initial ? de(initial.price) : ""} required />
-          <span className="mt-1 block text-xs text-muted">
-            in Handelswährung{(holding ?? initial) ? ` (${(holding ?? initial)!.currency})` : ""}
-          </span>
+          <span className="mt-1 block text-xs text-muted">in Euro laut Abrechnung, ohne Gebühren</span>
         </label>
         <label className="block">
           <span className="mb-1 block text-sm">Gebühren (€)</span>
