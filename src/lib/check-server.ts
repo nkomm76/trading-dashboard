@@ -71,15 +71,18 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
         ? `Eulerpool nicht verwendet: ${x.rejected}`
         : undefined;
   const growthExt = extendHistory(growthRows, ep);
+  // Für das Ø-KGV bis zu 10 Jahre Gewinnhistorie
+  const epsExt = extendHistory(growthRows, ep, 11);
   // REITs: Eulerpool zieht Immobilienkäufe vom Free Cashflow ab – für den DCF nicht vergleichbar
   const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(market.annual, ep);
-  if (growthExt.addedYears.length || dcfExt?.addedYears.length) sources.push("Eulerpool");
+  if (growthExt.addedYears.length || dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
 
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
   const result = evaluateCheck(market, {
     growthRows: growthExt.rows,
     growthNote: describe(growthExt),
     dcfHistory: dcfExt && { annual: dcfExt.rows, note: describe(dcfExt) },
+    epsHistory: { annual: epsExt.rows, note: describe(epsExt) },
     sources,
     chartQuarterly,
     dcf: (await getThresholds()).dcf,

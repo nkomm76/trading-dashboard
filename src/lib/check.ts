@@ -1,4 +1,5 @@
 import type { DividendPayment, MarketData, PricePoint, StatementRow } from "./data/types";
+import { epsSeries, fairValueByPe, type PeFairResult } from "./fair-pe";
 import { annualTotals, computeMetrics, detectDividendCut, detectFrequency, fcfOf } from "./metrics";
 import { DEFAULT_THRESHOLDS, type DcfAssumptions, type LightColor } from "./rating";
 
@@ -27,6 +28,8 @@ export type CheckResult = {
   schedule?: { frequency?: string; months?: string[]; last?: { date: string; amount: number }; nextExDate?: string };
   fairValue?: FairValue;
   dcf?: DcfResult;
+  /** Fairer Wert nach Ø-KGV, mit Gewinnreihe für die Kurve im Kurschart */
+  peFair: PeFairResult;
   /** Dividende je Aktie der letzten 10 abgeschlossenen Kalenderjahre */
   dividendsByYear: { year: number; total: number }[];
   /** Datenquellen dieses Checks für den Hinweis unten */
@@ -358,6 +361,30 @@ export function recentFundamentals(rows: StatementRow[], asOf: string): Fundamen
     .filter((r) => r.eps !== null || r.fcf !== null);
 }
 
+/** Fairer Wert nach Ø-KGV der letzten 5 Jahre; Gewinne in die Handelswährung umgerechnet. */
+function peFairValue(
+  market: MarketData,
+  ttm: { value: number; asOf: string; period?: string } | undefined,
+  asOf: string,
+  toTradingCurrency?: (v: number) => number | undefined,
+  history?: { annual: StatementRow[]; note?: string },
+): PeFairResult {
+  const sameCurrency = !market.financialCurrency || market.financialCurrency === market.currency;
+  const rate = sameCurrency ? 1 : toTradingCurrency?.(1);
+  if (!rate) return { unavailable: "Wechselkurs für die Bilanzwährung fehlt" };
+  const raw = epsSeries(history?.annual ?? market.annual, ttm?.period === "TTM" ? { date: ttm.asOf, eps: ttm.value } : undefined);
+  const points = raw.map((p) => ({ date: p.date, eps: p.eps * rate }));
+  const f = fairValueByPe(points, market.monthlyCloses, market.price?.value, asOf);
+  if ("unavailable" in f) return f;
+  const last = raw.at(-1)!;
+  const isTtm = ttm?.period === "TTM" && last.date === ttm.asOf;
+  return {
+    ...f,
+    epsBasis: isTtm ? "Ø aus den letzten 12 Monaten und den 2 Geschäftsjahren davor" : `Ø der Geschäftsjahre bis ${fy(last.date)} (höchstens 3)`,
+    notes: [...(history?.note ? [history.note] : []), ...(sameCurrency ? [] : [`Gewinne von ${market.financialCurrency} in ${market.currency} umgerechnet`]), ...f.notes],
+  };
+}
+
 export function evaluateCheck(
   market: MarketData,
   opts: {
@@ -367,6 +394,8 @@ export function evaluateCheck(
     growthNote?: string;
     /** Jahreswerte für den DCF (ggf. um Eulerpool verlängert) */
     dcfHistory?: { annual: StatementRow[]; note?: string };
+    /** Jahres-EPS für den fairen Wert nach KGV (ggf. aus SEC oder um Eulerpool verlängert) */
+    epsHistory?: { annual: StatementRow[]; note?: string };
     sources?: string[];
     toTradingCurrency?: (v: number) => number | undefined;
     asOf?: string;
@@ -405,6 +434,7 @@ export function evaluateCheck(
       : undefined,
     fairValue: fairValueByYield(market.dividends, market.monthlyCloses, market.price?.value, asOf),
     dcf: dcfValue(market, opts.dcf, opts.toTradingCurrency, opts.dcfHistory),
+    peFair: peFairValue(market, metrics.epsTTM, asOf, opts.toTradingCurrency, opts.epsHistory),
     sources: opts.sources ?? ["Yahoo Finance"],
     dividendsByYear: [...annualTotals(market.dividends)]
       .filter(([y]) => y < year && y >= year - 10)

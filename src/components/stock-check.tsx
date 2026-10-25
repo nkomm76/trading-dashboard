@@ -97,6 +97,7 @@ export function StockCheck() {
   };
 
   const r = state?.result;
+  const pe = r && !("unavailable" in r.peFair) ? r.peFair : undefined;
 
   return (
     <div className="relative space-y-6">
@@ -155,13 +156,15 @@ export function StockCheck() {
               </div>
               <div>
                 <dt className="text-xs text-muted">Fairer Wert</dt>
-                <dd className="tabular text-lg font-semibold">
-                  {r.fairValue ? fmtMoney(r.fairValue.value, r.currency) : "–"}
-                  {r.dcf && !("unavailable" in r.dcf) && <span className="text-muted"> / {fmtMoney(r.dcf.value, r.currency)}</span>}
-                </dd>
+                <dd className="tabular text-lg font-semibold">{pe ? fmtMoney(pe.value, r.currency) : "–"}</dd>
                 <dd className="text-xs text-muted">
+                  {pe?.deviation !== undefined && (
+                    <span className={pe.deviation <= 0 ? "text-light-green" : "text-light-red"}>
+                      {fmtPct(Math.abs(pe.deviation))} {pe.deviation <= 0 ? "unterbewertet" : "überbewertet"} ·{" "}
+                    </span>
+                  )}
                   <button type="button" onClick={() => open("fair")} className="text-accent">
-                    {r.dcf && !("unavailable" in r.dcf) ? "Dividende / DCF" : "nach Dividendenrendite"}
+                    nach Ø-KGV
                   </button>
                 </dd>
               </div>
@@ -228,10 +231,7 @@ export function StockCheck() {
                 key={r.symbol}
                 symbol={r.symbol}
                 currency={r.currency}
-                fairLines={[
-                  ...(r.fairValue ? [{ label: "Dividende", value: r.fairValue.value, color: "var(--accent)" }] : []),
-                  ...(r.dcf && !("unavailable" in r.dcf) ? [{ label: "DCF", value: r.dcf.value, color: "var(--orange)", band: [r.dcf.low, r.dcf.high] as [number, number] }] : []),
-                ]}
+                fair={pe && { points: pe.points, pe: pe.pe }}
               />
             </section>
 
@@ -274,11 +274,38 @@ export function StockCheck() {
           <TabPanel id="fair" tab={tab} visited={visited}>
             <section className="card p-5">
               <h3 className="text-sm font-semibold">Fairer Wert</h3>
-              <div className="mt-3 grid gap-6 sm:grid-cols-2">
+              <div className="mt-3 grid gap-6 lg:grid-cols-3">
                 <div>
                   <p className="flex items-center gap-2 text-xs text-muted">
-                    <span className="inline-block w-4 border-t-2 border-dashed border-accent" /> Nach Dividendenrendite (Ø 5 Jahre)
+                    <span className="inline-block w-4 border-t-2 border-foreground" /> Nach KGV (Ø 5 Jahre) – Kurve im Chart
                   </p>
+                  {pe ? (
+                    <>
+                      <FairHeadline value={pe.value} deviation={pe.deviation} currency={r.currency} />
+                      <ul className="tabular mt-2 space-y-0.5 text-xs text-muted">
+                        <li>
+                          Gewinn je Aktie (Ø 3 Jahre) {fmtMoney(pe.eps, r.currency)} × Ø-KGV {pe.pe.toLocaleString("de-DE", { maximumFractionDigits: 1 })}
+                        </li>
+                        <li>Gewinn: {pe.epsBasis}</li>
+                        <li>
+                          Ø aus {pe.months} Monatswerten {fmtDate(pe.from)} – {fmtDate(pe.to)}, Spanne KGV {pe.minPe.toLocaleString("de-DE", { maximumFractionDigits: 1 })} bis{" "}
+                          {pe.maxPe.toLocaleString("de-DE", { maximumFractionDigits: 1 })}
+                        </li>
+                        <li>Gewinn als Ø von 3 Jahren, damit Einmaleffekte die Bewertung nicht verzerren; Ø-KGV auf derselben Basis.</li>
+                        <li>Im Chart für jeden Tag mit dem jeweiligen Gewinn je Aktie gerechnet.</li>
+                        {pe.notes.map((n) => (
+                          <li key={n} className="text-light-orange">
+                            Hinweis: {n}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted">Nicht berechenbar: {"unavailable" in r.peFair ? r.peFair.unavailable : "keine Daten"}.</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted">Nach Dividendenrendite (Ø 5 Jahre)</p>
                   {r.fairValue ? (
                     <>
                       <FairHeadline value={r.fairValue.value} deviation={r.fairValue.deviation} currency={r.currency} />
@@ -303,8 +330,8 @@ export function StockCheck() {
                   )}
                 </div>
                 <div>
-                  <p className="flex items-center gap-2 text-xs text-muted">
-                    <span className="inline-block w-4 border-t-2 border-dashed border-light-orange" /> Nach DCF (Free Cashflow)
+                  <p className="text-xs text-muted">
+                    Nach DCF (Free Cashflow)
                   </p>
                   {r.dcf && !("unavailable" in r.dcf) ? (
                     <>
@@ -338,8 +365,8 @@ export function StockCheck() {
                 </div>
               </div>
               <p className="mt-4 text-xs text-muted">
-                Beide Werte sind Modelle mit Annahmen, keine Anlageberatung. Die Dividendenmethode unterstellt, dass die Aktie zu ihrer üblichen Rendite zurückkehrt; der DCF
-                reagiert stark auf Abzinsung und Wachstum.
+                Alle drei Werte sind Modelle mit Annahmen, keine Anlageberatung. KGV- und Dividendenmethode unterstellen, dass die Aktie zu ihrer üblichen Bewertung
+                zurückkehrt; der DCF reagiert stark auf Abzinsung und Wachstum.
               </p>
             </section>
           </TabPanel>

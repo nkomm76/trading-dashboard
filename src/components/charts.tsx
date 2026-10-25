@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { valueAt, type TimeValue } from "@/lib/ema";
+import { fairAt, type EpsPoint } from "@/lib/fair-pe";
 
 const nf = (d = 2) => (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { maximumFractionDigits: d }) : "–");
 const compact = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 }) : "–");
@@ -109,8 +110,10 @@ const RANGE_LABELS: [Range, string][] = [
 ];
 type PricePoint = { time: number; close: number };
 
-/** Fairer Wert als Linie; optional mit Spanne, die als Band hinterlegt wird. */
-export type FairLine = { label: string; value: number; color: string; band?: [number, number] };
+/** Fairer Wert nach KGV: Gewinnreihe je Aktie × Ø-KGV, für jeden Tag neu berechnet. */
+export type FairCurve = { points: EpsPoint[]; pe: number };
+// Bewertungsstufen um den fairen Wert: darüber teurer (rot), darunter günstiger (grün)
+const FAIR_BANDS = [1.3, 1.2, 1.1, 0.9, 0.8, 0.7];
 
 // Gleitende Durchschnitte: EMA 200 aus Tageskursen, EMA 20 aus Wochenkursen
 const EMAS = [
@@ -119,7 +122,7 @@ const EMAS = [
 ] as const;
 type EmaKey = (typeof EMAS)[number]["key"];
 
-export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: string; currency: string; fairLines?: FairLine[] }) {
+export function PriceChart({ symbol, currency, fair }: { symbol: string; currency: string; fair?: FairCurve }) {
   const [range, setRange] = useState<Range>("1y");
   const [data, setData] = useState<{ key: string; points: PricePoint[] }>();
   // Zoom: per Maus aufgezogener Ausschnitt; feinere Kurse werden nachgeladen
@@ -127,6 +130,7 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
   const [drag, setDrag] = useState<{ start?: number; end?: number }>();
   const [emaLines, setEmaLines] = useState<{ symbol: string } & Record<EmaKey, TimeValue[]>>();
   const [emaOn, setEmaOn] = useState<Record<EmaKey, boolean>>({ ema200d: true, ema20w: true });
+  const [fairOn, setFairOn] = useState(true);
   const key = `${symbol}|${range}`;
 
   useEffect(() => {
@@ -207,20 +211,25 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
   const money = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ` ${currency}` : "–");
   // Durchschnitte nur bei Tages- und Wochenkursen; intraday wären sie eine flache Linie
   const lines = emaLines?.symbol === symbol && !intraday ? EMAS.filter((e) => emaLines[e.key].length) : [];
-  const rows = points?.map((p) => ({ ...p, ...Object.fromEntries(lines.filter((e) => emaOn[e.key]).map((e) => [e.key, valueAt(emaLines![e.key], p.time)])) }));
+  // Fairer Wert: Kurve nur bei Tages- und Wochenkursen, die Bewertung oben rechts immer
+  const showFair = !!fair && fairOn && !intraday;
+  const rows = points?.map((p) => ({
+    ...p,
+    ...Object.fromEntries(lines.filter((e) => emaOn[e.key]).map((e) => [e.key, valueAt(emaLines![e.key], p.time)])),
+    ...(showFair ? { fair: fairAt(fair.points, fair.pe, p.time) } : {}),
+  }));
   const lastRow = rows?.[rows.length - 1] as Record<string, number | undefined> | undefined;
-  // Faire Werte einblenden und die Achse erweitern; nur extreme Ausreißer weglassen, die den Verlauf plattdrücken würden
+  const fairNow = fair && points?.length ? fairAt(fair.points, fair.pe, points[points.length - 1].time) : undefined;
+  const valuation = fairNow && last ? last / fairNow - 1 : undefined;
+  // Achse: Kurs, Durchschnitte und fairer Wert; die Stufen nur, soweit sie den Verlauf nicht plattdrücken
   const closes = points?.map((p) => p.close) ?? [];
-  const emaValues = (rows ?? []).flatMap((r) => lines.map((e) => (r as Record<string, number | undefined>)[e.key]).filter((v): v is number => v !== undefined));
-  const lo = Math.min(...closes, ...emaValues);
-  const hi = Math.max(...closes, ...emaValues);
-  const shown = closes.length ? fairLines.filter((f) => f.value > lo * 0.5 && f.value < hi * 2) : [];
-  const hidden = closes.length ? fairLines.filter((f) => !shown.includes(f)) : [];
-  // Bänder nur so weit einbeziehen, wie sie im erlaubten Bereich liegen; der Rest wird abgeschnitten
+  const extra = (rows ?? []).flatMap((r) => [...lines.map((e) => e.key), "fair"].map((k) => (r as Record<string, number | undefined>)[k]).filter((v): v is number => v !== undefined));
+  const lo = Math.min(...closes);
+  const hi = Math.max(...closes);
   const inRange = (v: number) => v > lo * 0.5 && v < hi * 2;
-  const bandEdges = shown.flatMap((f) => (f.band ?? []).filter(inRange));
-  const yLo = Math.min(lo, ...shown.map((f) => f.value), ...bandEdges);
-  const yHi = Math.max(hi, ...shown.map((f) => f.value), ...bandEdges);
+  const yLo = Math.min(lo, ...extra.filter(inRange));
+  const yHi = Math.max(hi, ...extra.filter(inRange));
+  const fairOutside = showFair && extra.length > 0 && !extra.some(inRange);
 
   return (
     <div>
@@ -245,15 +254,33 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
             </button>
           )}
         </div>
-        {change !== undefined && (
-          <span className="tabular text-sm font-medium" style={{ color }}>
-            {change >= 0 ? "+" : ""}
-            {(change * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {valuation !== undefined && (
+            <span
+              className={`tabular rounded-full px-2.5 py-0.5 text-xs font-medium ${valuation <= 0 ? "bg-light-green/15 text-light-green" : "bg-light-red/15 text-light-red"}`}
+              title="Kurs im Vergleich zum fairen Wert nach Ø-KGV"
+            >
+              {(Math.abs(valuation) * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % {valuation <= 0 ? "unterbewertet" : "überbewertet"}
+            </span>
+          )}
+          {change !== undefined && (
+            <span className="tabular text-sm font-medium" style={{ color }}>
+              {change >= 0 ? "+" : ""}
+              {(change * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %
+            </span>
+          )}
+        </div>
       </div>
-      {lines.length > 0 && (
+      {(lines.length > 0 || (fair && !intraday)) && (
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {fair && !intraday && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-muted">
+              <input type="checkbox" checked={fairOn} onChange={() => setFairOn(!fairOn)} className="accent-accent" />
+              <span className="inline-block w-4 border-t-2 border-foreground" />
+              Fair Value (Ø-KGV {nf(1)(fair.pe)})
+              {fairOn && fairNow !== undefined && <span className="tabular"> {nf(2)(fairNow)}</span>}
+            </label>
+          )}
           {lines.map((e) => {
             const v = lastRow?.[e.key];
             return (
@@ -298,32 +325,36 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={fmtTick} tick={{ fontSize: 11, fill: "var(--muted)" }} minTickGap={40} />
               <YAxis
-                domain={shown.length || lines.length ? [yLo * 0.97, yHi * 1.03] : ["auto", "auto"]}
+                domain={lines.length || showFair ? [yLo * 0.97, yHi * 1.03] : ["auto", "auto"]}
+                allowDataOverflow
                 tick={{ fontSize: 12, fill: "var(--muted)" }}
                 tickFormatter={nf(2)}
                 width={52}
               />
-              <Tooltip contentStyle={tooltipStyle} labelFormatter={fmtFull} formatter={(v, name) => [money(v), name === "close" ? "Kurs" : (EMAS.find((e) => e.key === name)?.short ?? name)]} />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={fmtFull} formatter={(v, name) => [money(v), name === "close" ? "Kurs" : name === "fair" ? "Fair Value" : (EMAS.find((e) => e.key === name)?.short ?? name)]} />
               <Area type="monotone" dataKey="close" stroke={color} strokeWidth={2} fill="url(#priceFill)" dot={false} isAnimationActive={false} />
               {lines
                 .filter((e) => emaOn[e.key])
                 .map((e) => (
                   <Line key={e.key} type="monotone" dataKey={e.key} stroke={e.color} strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={false} />
                 ))}
-              {shown
-                .filter((f) => f.band)
-                .map((f) => (
-                  <ReferenceArea key={`${f.label}-band`} y1={f.band![0]} y2={f.band![1]} fill={f.color} fillOpacity={0.1} stroke="none" ifOverflow="hidden" />
+              {showFair &&
+                FAIR_BANDS.map((b) => (
+                  <Line
+                    key={b}
+                    type="monotone"
+                    dataKey={(r: { fair?: number }) => (r.fair === undefined ? undefined : r.fair * b)}
+                    stroke={b > 1 ? "var(--red)" : "var(--green)"}
+                    strokeOpacity={0.25 + Math.abs(b - 1) * 2}
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    activeDot={false}
+                    tooltipType="none"
+                    isAnimationActive={false}
+                  />
                 ))}
-              {shown.map((f, i) => (
-                <ReferenceLine
-                  key={f.label}
-                  y={f.value}
-                  stroke={f.color}
-                  strokeDasharray="5 4"
-                  label={{ value: f.label, position: i % 2 ? "insideBottomRight" : "insideTopLeft", fontSize: 11, fill: f.color }}
-                />
-              ))}
+              {showFair && <Line type="monotone" dataKey="fair" stroke="var(--foreground)" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />}
               {drag?.start !== undefined && drag.end !== undefined && <ReferenceArea x1={drag.start} x2={drag.end} fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.4} />}
             </ComposedChart>
           </ResponsiveContainer>
@@ -331,8 +362,8 @@ export function PriceChart({ symbol, currency, fairLines = [] }: { symbol: strin
       </div>
       <p className="mt-1 text-xs text-muted">
         Zum Vergrößern einen Bereich mit der Maus aufziehen. Quelle: Yahoo Finance{intraday ? ", intraday ggf. verzögert; gleitende Durchschnitte ab 6 Monaten" : ""}.
-        {shown.some((f) => f.band) && ` Band: Spanne des ${shown.filter((f) => f.band).map((f) => f.label).join(" und ")}-Werts.`}
-        {hidden.length > 0 && ` ${hidden.map((f) => f.label).join(" und ")} außerhalb des dargestellten Kursbereichs.`}
+        {showFair && " Fair Value = Gewinn je Aktie (Ø 3 Jahre) × Ø-KGV der letzten 5 Jahre; gestrichelt: KGV 10/20/30 % höher (rot) bzw. niedriger (grün)."}
+        {fairOutside && " Fair Value liegt außerhalb des dargestellten Kursbereichs."}
       </p>
     </div>
   );

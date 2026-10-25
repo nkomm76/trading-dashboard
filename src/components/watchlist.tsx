@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { removeWatch, runWatchRefresh, type FormState } from "@/app/actions";
-import { fmtDate, fmtMoney } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import type { WatchRow } from "@/lib/watchlist-server";
 import { PriceChart } from "./charts";
 import { Light } from "./light";
@@ -58,6 +58,7 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
                   <th className="px-4 py-2 font-normal">Name</th>
                   <th className="px-4 py-2 font-normal">Ampel</th>
                   <th className="px-4 py-2 text-right font-normal">Kurs</th>
+                  <th className="px-4 py-2 font-normal">Fair Value (KGV)</th>
                   <th className="px-4 py-2 font-normal">Stand</th>
                   <th className="px-4 py-2" />
                 </tr>
@@ -85,6 +86,15 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
                       )}
                     </td>
                     <td className="tabular px-4 py-2 text-right">{r.summary?.price ? fmtMoney(r.summary.price.value, r.currency) : "–"}</td>
+                    <td className="tabular px-4 py-2 text-xs">
+                      {r.summary?.pe?.deviation !== undefined ? (
+                        <span className={r.summary.pe.deviation <= 0 ? "text-light-green" : "text-light-red"}>
+                          {fmtPct(Math.abs(r.summary.pe.deviation))} {r.summary.pe.deviation <= 0 ? "unter" : "über"}
+                        </span>
+                      ) : (
+                        <span className="text-muted">–</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-xs text-muted">
                       {r.checkedAt ? fmtDate(r.checkedAt) : "–"}
                       {r.error && (
@@ -119,8 +129,13 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
                 </h2>
                 {s && (
                   <span className="tabular text-xs text-muted">
-                    {s.fairValue !== undefined && `Fair (Dividende) ${fmtMoney(s.fairValue, current.currency)}`}
-                    {s.dcf !== undefined && ` · Fair (DCF) ${fmtMoney(s.dcf, current.currency)}`}
+                    {[
+                      s.pe && `Fair (KGV) ${fmtMoney(s.pe.value, current.currency)}`,
+                      s.fairValue !== undefined && `Fair (Dividende) ${fmtMoney(s.fairValue, current.currency)}`,
+                      s.dcf !== undefined && `Fair (DCF) ${fmtMoney(s.dcf, current.currency)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 )}
               </div>
@@ -128,10 +143,7 @@ export function Watchlist({ rows }: { rows: WatchRow[] }) {
                 key={current.symbol}
                 symbol={current.symbol}
                 currency={current.currency}
-                fairLines={[
-                  ...(s?.fairValue !== undefined ? [{ label: "Dividende", value: s.fairValue, color: "var(--accent)" }] : []),
-                  ...(s?.dcf !== undefined ? [{ label: "DCF", value: s.dcf, color: "var(--orange)", band: s.dcfRange }] : []),
-                ]}
+                fair={s?.pe && { points: s.pe.points, pe: s.pe.pe }}
               />
               {s && s.items.length > 0 && (
                 <ul className="mt-4 space-y-1 border-t border-border pt-3 text-sm">

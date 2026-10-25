@@ -1,4 +1,5 @@
 import type { CheckResult } from "./check";
+import type { EpsPoint } from "./fair-pe";
 import type { LightColor } from "./rating";
 
 // Kurzfassung eines Aktien Checks für die Watchliste (ohne Netzwerk, testbar)
@@ -11,8 +12,8 @@ export type WatchSummary = {
   expectedYield?: number;
   fairValue?: number;
   dcf?: number;
-  /** DCF-Spanne (Abzinsung ±1 Prozentpunkt) */
-  dcfRange?: [number, number];
+  /** Fairer Wert nach Ø-KGV mit Gewinnreihe für die Kurve im Kurschart */
+  pe?: { value: number; deviation?: number; pe: number; points: EpsPoint[] };
 };
 
 export function summarize(r: CheckResult): WatchSummary {
@@ -24,7 +25,7 @@ export function summarize(r: CheckResult): WatchSummary {
     expectedYield: r.expectedYield?.value,
     fairValue: r.fairValue?.value,
     dcf: r.dcf && !("unavailable" in r.dcf) ? r.dcf.value : undefined,
-    dcfRange: r.dcf && !("unavailable" in r.dcf) ? [r.dcf.low, r.dcf.high] : undefined,
+    pe: "unavailable" in r.peFair ? undefined : { value: r.peFair.value, deviation: r.peFair.deviation, pe: r.peFair.pe, points: r.peFair.points },
   };
 }
 
