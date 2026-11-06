@@ -89,7 +89,12 @@ Host github-dividenden
 EOF
 git clone github-dividenden:nkomm76/dividenden-dashboard.git ~/dividenden-dashboard
 cd ~/dividenden-dashboard
+git checkout production
 ```
+
+Der Zweig `production` enthält nur Stände, die auf GitHub alle Prüfungen
+bestanden haben (Tests, Lint, Docker-Build). GitHub legt ihn beim ersten grünen
+Lauf auf `main` an.
 
 ## 4. Zugangsdaten (.env)
 
@@ -171,11 +176,44 @@ Bleibt die Anmeldung über `http://localhost` nicht bestehen, vorübergehend
 `COOKIE_SECURE="false"` in die `.env` schreiben und `docker compose up -d app`
 ausführen. Nach dem Einrichten des Cloudflare Tunnels wieder entfernen.
 
+## 8. Automatisch aktualisieren
+
+Ablauf: Du pushst auf `main`. GitHub Actions prüft den Stand und setzt bei
+Erfolg den Zweig `production` darauf. Der VPS schaut alle 5 Minuten nach und
+startet bei einem neuen Stand mit neu gebauten Containern. GitHub hat dabei
+keinen Zugang zum Server. Der VPS liest nur über den Deploy-Key.
+
+Einrichten (einmalig, `<NUTZER>` ersetzen):
+
+```bash
+cd ~/dividenden-dashboard
+sed "s/<NUTZER>/$USER/g" deploy/dividenden-deploy.service | sudo tee /etc/systemd/system/dividenden-deploy.service >/dev/null
+sudo cp deploy/dividenden-deploy.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dividenden-deploy.timer
+```
+
+Prüfen:
+
+```bash
+systemctl list-timers dividenden-deploy.timer
+journalctl -u dividenden-deploy -n 50
+```
+
+- **Scheitert ein Stand auf dem Server**, zum Beispiel beim Start: Das Skript
+  springt auf den vorherigen Stand zurück und versucht den kaputten Stand nicht
+  erneut. Der nächste Push mit einer Korrektur wird wieder normal übernommen.
+- **Vorsicht bei Datenbank-Migrationen:** Ist die Migration schon gelaufen und
+  scheitert erst danach der Start, passt der alte Code womöglich nicht mehr zur
+  Datenbank. Dann die Korrektur pushen und nicht zurückgehen.
+- **Sofort statt in bis zu 5 Minuten:** `sudo systemctl start dividenden-deploy`.
+
 ## Betrieb
 
 | Aufgabe | Befehl (im Ordner `~/dividenden-dashboard`) |
 |---|---|
-| Neuen Code einspielen | `git pull && docker compose up -d --build` |
+| Neuen Code einspielen | automatisch (Abschnitt 8); sofort: `sudo systemctl start dividenden-deploy` |
+| Automatik pausieren | `sudo systemctl stop dividenden-deploy.timer` (wieder an: `start`) |
 | Protokoll ansehen | `docker compose logs -f app` |
 | Neu starten | `docker compose restart app` |
 | Zweiten Faktor im Notfall abschalten | `docker compose run --rm migrate npm run reset-2fa` |

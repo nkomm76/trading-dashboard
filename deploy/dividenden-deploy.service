@@ -1,0 +1,12 @@
+# Holt freigegebene Stände ab (siehe deploy/auto-deploy.sh). Installation: deploy/VPS.md, Abschnitt "Automatisch aktualisieren".
+# <NUTZER> vor dem Kopieren ersetzen.
+[Unit]
+Description=Dividenden-Dashboard: neuen freigegebenen Stand abholen
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=<NUTZER>
+ExecStart=/bin/sh /home/<NUTZER>/dividenden-dashboard/deploy/auto-deploy.sh
+TimeoutStartSec=30min

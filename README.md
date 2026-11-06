@@ -42,6 +42,10 @@ Die Datenbank ist nur intern erreichbar, die App nur auf `127.0.0.1:3000`. Schri
 docker compose up -d --build
 ```
 
+Updates laufen automatisch: Ein Push auf `main` startet GitHub Actions (Typprüfung, Lint, Tests, Docker-Build).
+Ist alles grün, zeigt der Zweig `production` auf diesen Stand, und der VPS holt ihn innerhalb von 5 Minuten selbst ab
+(`deploy/auto-deploy.sh` per systemd-Timer). GitHub braucht keinen Zugang zum Server.
+
 ## Sicherheit
 
 - Passwort (bcrypt) und optional zweiter Faktor per Authenticator-App (Einstellungen → Anmeldung)

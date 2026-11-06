@@ -48,3 +48,6 @@ next-env.d.ts
 
 # lokale Datensicherungen (persönliche Depotdaten)
 /backups/
+
+# Merker des Abhol-Skripts auf dem VPS
+/.deploy-failed

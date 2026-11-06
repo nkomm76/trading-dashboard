@@ -1,0 +1,53 @@
+# Prüft jeden Push und Pull Request. Ist auf main alles grün, zeigt der Zweig "production" auf diesen Stand;
+# den holt der VPS selbst ab (deploy/auto-deploy.sh). GitHub braucht dafür keinen Zugang zum Server.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test
+      # Baut beide Container-Images wie auf dem VPS; schlägt der Build fehl, kommt der Stand nicht auf den Server
+      - run: docker build --target runner -t dividenden-app .
+      - run: docker build --target tools -t dividenden-tools .
+
+  release:
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Nie zwei Freigaben gleichzeitig; eine neuere ersetzt eine noch wartende ältere
+    concurrency:
+      group: release
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: production auf diesen Stand setzen (nur wenn er noch der neueste auf main ist)
+        run: |
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "main ist inzwischen weiter ($head), diesen Stand nicht freigeben."
+            exit 0
+          fi
+          git push --force origin "$GITHUB_SHA:refs/heads/production"
+          echo "production → $GITHUB_SHA"

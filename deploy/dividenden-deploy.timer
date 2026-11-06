@@ -1,0 +1,10 @@
+[Unit]
+Description=Dividenden-Dashboard: alle 5 Minuten auf neuen Stand prüfen
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
