@@ -111,11 +111,20 @@ export function concentrations<T extends { valueEur?: number }>(positions: T[], 
 }
 
 export type HistoryInput = {
+  assetClass?: AssetClass; // ohne Angabe als Aktie gezählt
   txs: Tx[];
   closes: { time: number; close: number }[]; // EUR, aufsteigend
 };
 
-export type HistoryPoint = { date: string; securities: number; cost: number; cash?: number; total: number };
+export type HistoryPoint = {
+  date: string;
+  securities: number;
+  /** Wert je Anlageklasse; die Summe ist securities */
+  byClass: Record<AssetClass, number>;
+  cost: number;
+  cash?: number;
+  total: number;
+};
 
 const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 
@@ -139,11 +148,12 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
   const grid = [...days].filter((d) => d >= start && d <= today).sort();
 
   const sortedCash = [...cash].sort((a, b) => a.date.localeCompare(b.date));
-  const series = holdings.map((h) => ({ txs: sortTx(h.txs), closes: h.closes.map((c) => ({ day: dayOf(c.time), close: c.close })) }));
+  const series = holdings.map((h) => ({ cls: h.assetClass ?? "STOCK", txs: sortTx(h.txs), closes: h.closes.map((c) => ({ day: dayOf(c.time), close: c.close })) }));
 
   return grid.map((day) => {
     let securities = 0;
     let cost = 0;
+    const byClass: Record<AssetClass, number> = { STOCK: 0, ETF: 0, CRYPTO: 0 };
     for (const s of series) {
       const until = s.txs.filter((t) => t.date <= day);
       if (!until.length) continue;
@@ -156,13 +166,15 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
         if (c.day > day) break;
         price = c.close;
       }
-      securities += price !== undefined ? price * pos.quantity : pos.cost;
+      const value = price !== undefined ? price * pos.quantity : pos.cost;
+      securities += value;
+      byClass[s.cls] += value;
     }
     let cashValue: number | undefined;
     for (const c of sortedCash) {
       if (c.date > day) break;
       cashValue = c.amount;
     }
-    return { date: day, securities, cost, cash: cashValue, total: securities + (cashValue ?? 0) };
+    return { date: day, securities, byClass, cost, cash: cashValue, total: securities + (cashValue ?? 0) };
   });
 }

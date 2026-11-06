@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { Area, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { saveCash } from "@/app/actions";
-import { CLASS_COLOR, CLASS_LABEL, groupSlices, type Bucket, type HistoryPoint } from "@/lib/wealth";
+import { BUCKETS, CLASS_COLOR, CLASS_LABEL, groupSlices, type Bucket, type HistoryPoint } from "@/lib/wealth";
 
 const tooltipStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 };
 const euro0 = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }) : "–");
@@ -116,8 +116,13 @@ export function WealthHistory() {
     const days = range === "6m" ? 183 : 365;
     const from = last ? new Date(Date.parse(last.date) - days * 86_400_000).toISOString().slice(0, 10) : "";
     // Barbestand als eigene Fläche über den Wertpapieren: die Oberkante ist das Gesamtvermögen
-    return data.points.filter((p) => range === "all" || p.date >= from).map((p) => ({ ...p, cashValue: p.cash ?? 0, time: Date.parse(p.date) }));
+    return data.points
+      .filter((p) => range === "all" || p.date >= from)
+      .map((p) => ({ ...p, STOCK: p.byClass.STOCK, ETF: p.byClass.ETF, CRYPTO: p.byClass.CRYPTO, CASH: p.cash ?? 0, time: Date.parse(p.date) }));
   }, [data, range]);
+
+  // Nur Klassen zeigen, die im gewählten Zeitraum vorkommen; Reihenfolge von unten nach oben
+  const layers = BUCKETS.filter((b) => points.some((p) => p[b] > 0));
 
   const fmtDay = (t: number) => new Date(t).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
 
@@ -156,28 +161,48 @@ export function WealthHistory() {
                 <Tooltip
                   contentStyle={tooltipStyle}
                   content={({ active, payload, label }) => {
-                    const p = active && payload?.[0]?.payload as (HistoryPoint & { cashValue: number }) | undefined;
+                    const p = active && (payload?.[0]?.payload as (HistoryPoint & Record<Bucket, number>) | undefined);
                     if (!p) return null;
                     return (
                       <div style={tooltipStyle} className="px-3 py-2">
                         <div className="mb-1 font-medium">{fmtDay(Number(label))}</div>
-                        <div>Gesamtvermögen: {euro0(p.total)}</div>
-                        <div style={{ color: "var(--cls-stock)" }}>Wertpapiere: {euro0(p.securities)}</div>
-                        <div className="text-muted">Barbestand: {p.cash === undefined ? "noch nicht eingetragen" : euro0(p.cash)}</div>
+                        <div className="font-medium">Gesamtvermögen: {euro0(p.total)}</div>
+                        {[...layers].reverse().map((b) => (
+                          <div key={b} className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-sm" style={{ background: CLASS_COLOR[b] }} />
+                            {CLASS_LABEL[b]}: {b === "CASH" && p.cash === undefined ? "noch nicht eingetragen" : euro0(p[b])}
+                          </div>
+                        ))}
                         <div className="text-muted">Einstand: {euro0(p.cost)}</div>
                       </div>
                     );
                   }}
                 />
-                <Area dataKey="securities" stackId="v" name="Wertpapiere" type="linear" stroke="var(--cls-stock)" strokeWidth={2} fill="var(--cls-stock)" fillOpacity={0.18} isAnimationActive={false} />
-                <Area dataKey="cashValue" stackId="v" name="Barbestand" type="stepAfter" stroke="var(--cls-cash)" strokeWidth={1.5} fill="var(--cls-cash)" fillOpacity={0.3} isAnimationActive={false} />
+                {layers.map((b) => (
+                  <Area
+                    key={b}
+                    dataKey={b}
+                    stackId="v"
+                    name={CLASS_LABEL[b]}
+                    type={b === "CASH" ? "stepAfter" : "linear"}
+                    stroke={CLASS_COLOR[b]}
+                    strokeWidth={1.5}
+                    fill={CLASS_COLOR[b]}
+                    fillOpacity={0.35}
+                    isAnimationActive={false}
+                  />
+                ))}
                 <Line dataKey="cost" name="Einstand" stroke="var(--foreground)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-            <span><span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: "var(--cls-stock)", opacity: 0.6 }} />Wertpapiere</span>
-            <span><span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: "var(--cls-cash)", opacity: 0.6 }} />Barbestand</span>
+            {layers.map((b) => (
+              <span key={b}>
+                <span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: CLASS_COLOR[b], opacity: 0.7 }} />
+                {CLASS_LABEL[b]}
+              </span>
+            ))}
             <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed align-middle" style={{ borderColor: "var(--foreground)" }} />Einstand (bezahlte Kaufkurse inkl. Gebühren)</span>
             <span>Oberkante = Gesamtvermögen</span>
           </div>

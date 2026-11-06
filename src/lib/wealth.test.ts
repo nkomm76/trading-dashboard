@@ -65,10 +65,24 @@ describe("wealthHistory", () => {
       "2026-01-08",
     );
     expect(h.map((p) => p.date)).toEqual(["2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"]);
-    expect(h[0]).toEqual({ date: "2026-01-02", securities: 1000, cost: 1000, cash: undefined, total: 1000 });
+    expect(h[0]).toEqual({ date: "2026-01-02", securities: 1000, byClass: { STOCK: 1000, ETF: 0, CRYPTO: 0 }, cost: 1000, cash: undefined, total: 1000 });
     expect(h[1]).toMatchObject({ securities: 1100, cash: 1000, total: 2100 });
     expect(h[2]).toMatchObject({ securities: 660, cost: 600 }); // 6 Stück zum Kurs vom 05.01.
     expect(h[4]).toMatchObject({ securities: 720, total: 1720 });
+  });
+
+  it("teilt den Wert nach Anlageklassen auf", () => {
+    const h = wealthHistory(
+      [
+        { assetClass: "ETF", txs: [buy("2026-01-02", 10, 100)], closes: [{ time: t("2026-01-02"), close: 110 }] },
+        { assetClass: "CRYPTO", txs: [buy("2026-01-02", 0.5, 1000)], closes: [{ time: t("2026-01-02"), close: 900 }] },
+        { txs: [buy("2026-01-02", 2, 50)], closes: [] }, // ohne Kurs: zum Einstand, ohne Klasse als Aktie
+      ],
+      [],
+      "2026-01-02",
+    );
+    expect(h[0].byClass).toEqual({ STOCK: 100, ETF: 1100, CRYPTO: 450 });
+    expect(h[0].securities).toBe(1650);
   });
 
   it("liefert nichts ohne Buchungen und Kontostände", () => {

@@ -15,7 +15,7 @@ export async function GET() {
     db.stock.findMany({ where: { purchases: { some: {} } }, include: { purchases: true } }),
     db.cashBalance.findMany({ orderBy: { date: "asc" } }),
   ]);
-  const inputs = stocks.map((s) => ({ symbol: s.symbol, txs: s.purchases.map(toTx) }));
+  const inputs = stocks.map((s) => ({ symbol: s.symbol, assetClass: s.assetClass, txs: s.purchases.map(toTx) }));
   const cashRows = cash.map((c) => ({ date: c.date.toISOString().slice(0, 10), amount: Number(c.amount) }));
   const key = JSON.stringify([inputs, cashRows]);
   const hit = cache.get(key);
@@ -30,7 +30,7 @@ export async function GET() {
 
   const today = new Date().toISOString().slice(0, 10);
   const points = wealthHistory(
-    inputs.map((i, n) => ({ txs: i.txs, closes: closes[n] })),
+    inputs.map((i, n) => ({ assetClass: i.assetClass, txs: i.txs, closes: closes[n] })),
     cashRows,
     today,
   );
