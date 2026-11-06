@@ -45,3 +45,6 @@ next-env.d.ts
 
 # lokale Claude-/Editor-Einstellungen
 /.claude/
+
+# lokale Datensicherungen (persönliche Depotdaten)
+/backups/
