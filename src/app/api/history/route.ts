@@ -19,7 +19,9 @@ export async function GET() {
   const cashRows = cash.map((c) => ({ date: c.date.toISOString().slice(0, 10), amount: Number(c.amount) }));
   const key = JSON.stringify([inputs, cashRows]);
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < 30 * 60_000) return NextResponse.json(hit.body);
+  // Nie im Browser zwischenspeichern: die Antwort ändert sich mit jeder Buchung und jedem Kontostand
+  const headers = { "Cache-Control": "no-store" };
+  if (hit && Date.now() - hit.at < 30 * 60_000) return NextResponse.json(hit.body, { headers });
 
   const first = inputs.flatMap((i) => i.txs.map((t) => t.date)).sort()[0];
   const from = first ? new Date(Date.parse(first) - 7 * DAY) : new Date();
@@ -36,5 +38,5 @@ export async function GET() {
   );
   const body = { points, cashSince: cashRows[0]?.date, missing };
   cache.set(key, { at: Date.now(), body });
-  return NextResponse.json(body);
+  return NextResponse.json(body, { headers });
 }

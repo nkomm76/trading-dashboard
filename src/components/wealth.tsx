@@ -100,7 +100,7 @@ export function WealthHistory() {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/history")
+    fetch("/api/history", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => alive && setData(d))
       .catch(() => alive && setError(true));
@@ -118,7 +118,11 @@ export function WealthHistory() {
     // Barbestand als eigene Fläche über den Wertpapieren: die Oberkante ist das Gesamtvermögen
     return data.points
       .filter((p) => range === "all" || p.date >= from)
-      .map((p) => ({ ...p, STOCK: p.byClass.STOCK, ETF: p.byClass.ETF, CRYPTO: p.byClass.CRYPTO, CASH: p.cash ?? 0, time: Date.parse(p.date) }));
+      // Ältere Antworten ohne Aufteilung: alles als Aktien zeigen statt abzustürzen
+      .map((p) => {
+        const c = p.byClass ?? { STOCK: p.securities, ETF: 0, CRYPTO: 0 };
+        return { ...p, STOCK: c.STOCK, ETF: c.ETF, CRYPTO: c.CRYPTO, CASH: p.cash ?? 0, time: Date.parse(p.date) };
+      });
   }, [data, range]);
 
   // Nur Klassen zeigen, die im gewählten Zeitraum vorkommen; Reihenfolge von unten nach oben
@@ -186,9 +190,9 @@ export function WealthHistory() {
                     name={CLASS_LABEL[b]}
                     type={b === "CASH" ? "stepAfter" : "linear"}
                     stroke={CLASS_COLOR[b]}
-                    strokeWidth={1.5}
+                    strokeWidth={2}
                     fill={CLASS_COLOR[b]}
-                    fillOpacity={0.35}
+                    fillOpacity={b === "CASH" ? 0.45 : 0.7}
                     isAnimationActive={false}
                   />
                 ))}
@@ -199,7 +203,7 @@ export function WealthHistory() {
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             {layers.map((b) => (
               <span key={b}>
-                <span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: CLASS_COLOR[b], opacity: 0.7 }} />
+                <span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: CLASS_COLOR[b] }} />
                 {CLASS_LABEL[b]}
               </span>
             ))}
