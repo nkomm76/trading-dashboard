@@ -61,6 +61,12 @@ if (repeat !== pw) {
 }
 
 const hash = Buffer.from(bcrypt.hashSync(pw, 12)).toString("base64");
+// --print: nur ausgeben (z. B. für die .env auf dem VPS), die lokale .env bleibt unverändert
+if (process.argv.includes("--print")) {
+  console.log("ADMIN_PASSWORD_HASH_B64 für die .env auf dem Server:");
+  console.log(hash);
+  process.exit(0);
+}
 const file = ".env";
 let env = existsSync(file) ? readFileSync(file, "utf8") : "";
 env = env.replace(/^ADMIN_PASSWORD_HASH_B64=.*\n?/m, "");

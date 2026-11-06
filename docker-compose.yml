@@ -1,0 +1,75 @@
+# Betrieb auf dem VPS: docker compose up -d --build   (Anleitung: deploy/VPS.md)
+# Zugangsdaten stehen in .env neben dieser Datei (Vorlage: .env.example, Abschnitt Docker).
+# Die Datenbank hat keinen Port nach außen; die App lauscht nur auf 127.0.0.1:3000
+# (erreichbar über Cloudflare Tunnel oder einen SSH-Tunnel, nicht direkt aus dem Internet).
+
+x-db-url: &db-url mysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Läuft bei jedem Start einmal und bringt die Tabellen auf den Stand des Codes
+  migrate:
+    build: { context: ., target: tools }
+    environment:
+      DATABASE_URL: *db-url
+    networks: [internal]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  app:
+    build: { context: ., target: runner }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: *db-url
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [internal, web]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  # Tägliche Sicherung nach ./backups (14 Tage)
+  backup:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_PWD: ${DB_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_NAME: ${DB_NAME}
+    volumes:
+      - ./backups:/backups
+      - ./deploy/backup.sh:/backup.sh:ro
+    networks: [internal]
+    depends_on:
+      db: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "/backup.sh"]
+
+volumes:
+  db-data:
+
+networks:
+  # Ohne Internetzugang: nur App, Migration und Sicherung erreichen die Datenbank
+  internal:
+    internal: true
+  # Für die App: Daten von Yahoo, SEC, EZB, Eulerpool und Claude
+  web:
