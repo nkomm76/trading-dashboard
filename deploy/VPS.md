@@ -84,28 +84,12 @@ sudo usermod -aG docker <NUTZER>
 
 ## 3. Code holen
 
-Das Repository ist privat. Am sichersten ist ein Deploy-Key, der nur lesen darf:
+Das Repository `nkomm76/trading-dashboard` ist öffentlich. Der VPS braucht
+deshalb keinen Schlüssel und darf nur lesen:
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/dividenden_deploy -N ""
-cat ~/.ssh/dividenden_deploy.pub
-```
-
-Den ausgegebenen Schlüssel in GitHub unter *Repository → Settings → Deploy
-keys → Add deploy key* im Repository `nkomm76/trading-dashboard` eintragen,
-ohne Schreibrecht. Dann:
-
-```bash
-cat >> ~/.ssh/config <<'EOF'
-Host github-dividenden
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/dividenden_deploy
-  IdentitiesOnly yes
-EOF
-git clone github-dividenden:nkomm76/trading-dashboard.git ~/dividenden-dashboard
+git clone --branch production https://github.com/nkomm76/trading-dashboard.git ~/dividenden-dashboard
 cd ~/dividenden-dashboard
-git checkout production
 ```
 
 Der Zweig `production` enthält nur Stände, die auf GitHub alle Prüfungen
@@ -224,7 +208,7 @@ Fehlversuch-Sperre liest die Absender-IP aus `x-real-ip`, den Traefik setzt.
 Ablauf: Du pushst auf `main`. GitHub Actions prüft den Stand und setzt bei
 Erfolg den Zweig `production` darauf. Der VPS schaut alle 5 Minuten nach und
 startet bei einem neuen Stand mit neu gebauten Containern. GitHub hat dabei
-keinen Zugang zum Server. Der VPS liest nur über den Deploy-Key.
+keinen Zugang zum Server. Der VPS liest das öffentliche Repository nur.
 
 Einrichten (einmalig, `<NUTZER>` ersetzen):
 
