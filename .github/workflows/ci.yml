@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -23,6 +23,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Routen-Typen (z. B. LayoutProps) entstehen sonst erst beim Build
+      - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm test
@@ -33,7 +35,7 @@ jobs:
   release:
     needs: check
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     # Nie zwei Freigaben gleichzeitig; eine neuere ersetzt eine noch wartende ältere
