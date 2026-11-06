@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { saveCash } from "@/app/actions";
 import { CLASS_COLOR, CLASS_LABEL, groupSlices, type Bucket, type HistoryPoint } from "@/lib/wealth";
 
@@ -115,7 +115,8 @@ export function WealthHistory() {
     const last = data.points.at(-1);
     const days = range === "6m" ? 183 : 365;
     const from = last ? new Date(Date.parse(last.date) - days * 86_400_000).toISOString().slice(0, 10) : "";
-    return data.points.filter((p) => range === "all" || p.date >= from).map((p) => ({ ...p, time: Date.parse(p.date) }));
+    // Barbestand als eigene Fläche über den Wertpapieren: die Oberkante ist das Gesamtvermögen
+    return data.points.filter((p) => range === "all" || p.date >= from).map((p) => ({ ...p, cashValue: p.cash ?? 0, time: Date.parse(p.date) }));
   }, [data, range]);
 
   const fmtDay = (t: number) => new Date(t).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
@@ -148,21 +149,37 @@ export function WealthHistory() {
         <>
           <div className="h-56">
             <ResponsiveContainer>
-              <LineChart data={points}>
+              <ComposedChart data={points}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={fmtDay} tick={{ fontSize: 11, fill: "var(--muted)" }} minTickGap={40} />
-                <YAxis tick={{ fontSize: 11, fill: "var(--muted)" }} tickFormatter={euro0} width={72} domain={["auto", "auto"]} />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(t) => fmtDay(Number(t))} formatter={(v, name) => [euro0(v), name]} />
-                <Line dataKey="total" name="Gesamtvermögen" stroke="var(--cls-stock)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line dataKey="securities" name="Wertpapiere" stroke="var(--cls-etf)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                <Line dataKey="cost" name="Einstand" stroke="var(--cls-cash)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-              </LineChart>
+                <YAxis tick={{ fontSize: 11, fill: "var(--muted)" }} tickFormatter={euro0} width={72} domain={[0, "auto"]} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  content={({ active, payload, label }) => {
+                    const p = active && payload?.[0]?.payload as (HistoryPoint & { cashValue: number }) | undefined;
+                    if (!p) return null;
+                    return (
+                      <div style={tooltipStyle} className="px-3 py-2">
+                        <div className="mb-1 font-medium">{fmtDay(Number(label))}</div>
+                        <div>Gesamtvermögen: {euro0(p.total)}</div>
+                        <div style={{ color: "var(--cls-stock)" }}>Wertpapiere: {euro0(p.securities)}</div>
+                        <div className="text-muted">Barbestand: {p.cash === undefined ? "noch nicht eingetragen" : euro0(p.cash)}</div>
+                        <div className="text-muted">Einstand: {euro0(p.cost)}</div>
+                      </div>
+                    );
+                  }}
+                />
+                <Area dataKey="securities" stackId="v" name="Wertpapiere" type="linear" stroke="var(--cls-stock)" strokeWidth={2} fill="var(--cls-stock)" fillOpacity={0.18} isAnimationActive={false} />
+                <Area dataKey="cashValue" stackId="v" name="Barbestand" type="stepAfter" stroke="var(--cls-cash)" strokeWidth={1.5} fill="var(--cls-cash)" fillOpacity={0.3} isAnimationActive={false} />
+                <Line dataKey="cost" name="Einstand" stroke="var(--foreground)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-            <span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: "var(--cls-stock)" }} />Gesamtvermögen</span>
-            <span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: "var(--cls-etf)" }} />Wertpapiere</span>
-            <span><span className="mr-1 inline-block h-0.5 w-4 border-t border-dashed align-middle" style={{ borderColor: "var(--cls-cash)" }} />Einstand (bezahlte Kaufkurse inkl. Gebühren)</span>
+            <span><span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: "var(--cls-stock)", opacity: 0.6 }} />Wertpapiere</span>
+            <span><span className="mr-1 inline-block h-2.5 w-3 rounded-sm align-middle" style={{ background: "var(--cls-cash)", opacity: 0.6 }} />Barbestand</span>
+            <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed align-middle" style={{ borderColor: "var(--foreground)" }} />Einstand (bezahlte Kaufkurse inkl. Gebühren)</span>
+            <span>Oberkante = Gesamtvermögen</span>
           </div>
           <p className="mt-2 text-xs text-muted">
             {data.cashSince
