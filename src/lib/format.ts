@@ -30,3 +30,10 @@ export const sourceHint = (s: Sourced<unknown> | undefined) =>
 
 /** Monate der Ex-Tage, bei Monatszahlern kurz „jeden Monat“ */
 export const fmtMonths = (months: string[]) => (months.length >= 12 ? "jeden Monat" : months.join(", "));
+
+// Eingaben (Kauf-, Verkaufs-, Dividenden- und Kontostanddatum) beziehen sich auf den Kalendertag in Deutschland.
+// toISOString() liefert den UTC-Tag – zwischen 0 und 1 bzw. 2 Uhr wäre das noch der Vortag.
+export const APP_TIME_ZONE = "Europe/Berlin";
+
+/** Heutiges Datum als YYYY-MM-DD in deutscher Zeit. */
+export const localToday = (now = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);

@@ -4,6 +4,7 @@ import type { Metrics } from "./metrics";
 import type { Sourced } from "./data/types";
 import type { LightColor, Reason } from "./rating";
 import { getFxRates } from "./settings";
+import { localToday } from "./format";
 import { toEur } from "./data/fx";
 import { computePosition, type Tx } from "./position";
 import { BUCKETS, holdingPeriod, type AssetClass, type Bucket, type Holding } from "./wealth";
@@ -56,7 +57,7 @@ export async function loadPortfolio() {
     orderBy: { name: "asc" },
   });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const all: Position[] = stocks.map((s) => {
     const txs = s.purchases.map(toTx);
     const pos = computePosition(txs);
@@ -66,8 +67,13 @@ export async function loadPortfolio() {
     // Käufe und Verkäufe sind in Euro erfasst; nur Kurs und Dividende kommen in Handelswährung und werden umgerechnet
     const costEur = pos.quantity > 0 ? pos.cost + pos.openFeesEur : undefined;
     const valueEur = pos.quantity > 0 && metrics.price ? eur(metrics.price.value * pos.quantity) : undefined;
-    // Krypto schüttet nie aus, thesaurierende ETFs auch nicht: dort zählt „keine Ausschüttung“ als 0 statt als fehlender Wert
-    const noPayout = s.assetClass === "CRYPTO" || (s.assetClass === "ETF" && metrics.price !== undefined);
+    // Krypto, thesaurierende ETFs und Aktien ohne (oder mit eingestellter) Dividende: „keine Ausschüttung“ zählt als 0
+    // statt als fehlender Wert – sonst blieben Dividendensumme und Renditen des ganzen Depots leer
+    const status = metrics.dividendStatus?.value;
+    const noPayout =
+      s.assetClass === "CRYPTO" ||
+      (s.assetClass === "ETF" && metrics.price !== undefined) ||
+      (s.assetClass === "STOCK" && (status === "none" || status === "suspended"));
     const annualDividendEur =
       pos.quantity > 0 && metrics.dividendTTM ? eur(metrics.dividendTTM.value * pos.quantity) : pos.quantity > 0 && noPayout ? 0 : undefined;
     const priceEur = metrics.price && eur(metrics.price.value);

@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { Area, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { saveCash } from "@/app/actions";
 import { BUCKETS, CLASS_COLOR, CLASS_LABEL, groupSlices, type Bucket, type HistoryPoint } from "@/lib/wealth";
+import { localToday } from "@/lib/format";
 
 const tooltipStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 };
 const euro0 = (v: unknown) => (typeof v === "number" ? v.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }) : "–");
@@ -224,7 +225,7 @@ export function WealthHistory() {
 
 export function CashForm({ current }: { current?: { amount: number; date: string } }) {
   const [state, action, pending] = useActionState(saveCash, undefined);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   return (
     <form action={action} className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">

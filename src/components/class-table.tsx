@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { Position } from "@/lib/portfolio";
-import { fmtDate, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtPct } from "@/lib/format";
 import { Value } from "./value";
 
-const qty = (v: number) => fmtNum(v, v % 1 ? Math.min(8, Math.max(2, String(v).split(".")[1]?.length ?? 0)) : 0);
+// Bis 8 Nachkommastellen (Satoshi), ohne Exponentialschreibweise bei sehr kleinen Mengen
+const qty = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 8 });
 
 /** Einfache Tabelle für ETF und Krypto: ohne Ampel und Aktien-Kennzahlen. */
 export function ClassTable({ positions, total, kind }: { positions: Position[]; total?: number; kind: "ETF" | "CRYPTO" }) {

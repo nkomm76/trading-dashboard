@@ -99,11 +99,14 @@ const PER_YEAR: Record<Frequency, number> = {
 };
 
 /** Kürzung: letzte Zahlung > 5 % unter der vergleichbaren Zahlung ein Jahr zuvor. */
-/** Zahlung in den letzten 12 Monaten → zahlt; sonst Zahlung 12–36 Monate zurück → eingestellt; sonst keine Dividende. */
+// Ex-Tage verschieben sich von Jahr zu Jahr um einige Tage; erst nach dieser Frist gilt eine Dividende als ausgeblieben
+const PAYING_DAYS = 400;
+
+/** Zahlung in den letzten gut 13 Monaten → zahlt; sonst Zahlung bis 3 Jahre zurück → eingestellt; sonst keine Dividende. */
 export function dividendStatus(divs: DividendPayment[], asOf = today()): "paying" | "none" | "suspended" {
   const age = (d: DividendPayment) => daysBetween(d.date, asOf);
-  if (divs.some((d) => age(d) >= 0 && age(d) < 365)) return "paying";
-  if (divs.some((d) => age(d) >= 365 && age(d) < 3 * 365)) return "suspended";
+  if (divs.some((d) => age(d) >= 0 && age(d) < PAYING_DAYS)) return "paying";
+  if (divs.some((d) => age(d) >= PAYING_DAYS && age(d) < 3 * 365 + PAYING_DAYS - 365)) return "suspended";
   return "none";
 }
 

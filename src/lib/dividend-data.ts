@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "./db";
 import { toEur } from "./data/fx";
 import type { DividendPayment } from "./data/types";
@@ -32,11 +33,13 @@ export type ReceivedRow = {
 
 const num = (v: unknown) => (v === null || v === undefined ? undefined : Number(v));
 
-export async function loadDividends() {
+/** Einmal je Anfrage: Layout (Zahl im Menü) und Übersicht teilen sich das Ergebnis. */
+export const loadDividends = cache(async () => {
   const rates = (await getFxRates())?.rates;
   const stocks = await db.stock.findMany({
     where: { purchases: { some: {} } },
-    include: { purchases: true, dividends: true, snapshots: { orderBy: { date: "desc" }, take: 1 } },
+    // Nur die Zeitreihen des letzten Snapshots, nicht die Kennzahlen
+    include: { purchases: true, dividends: true, snapshots: { orderBy: { date: "desc" }, take: 1, select: { series: true } } },
   });
 
   const suggestions: SuggestionRow[] = [];
@@ -107,7 +110,7 @@ export async function loadDividends() {
       all: received.reduce((a, r) => a + (r.netEur ?? 0), 0),
     },
   };
-}
+});
 
 export async function countOpenSuggestions() {
   return (await loadDividends()).suggestions.length;

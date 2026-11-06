@@ -61,20 +61,30 @@ type WatchRefresh = { count: number; errors: string[] };
 const STALE_HOURS = 12;
 const staleWhere = () => ({ OR: [{ checkedAt: null }, { checkedAt: { lt: new Date(Date.now() - STALE_HOURS * 3_600_000) } }] });
 
-// Nur ein Lauf gleichzeitig; wer währenddessen aktualisiert, wartet auf diesen Lauf
-let running: Promise<WatchRefresh> | undefined;
+// Nur ein Lauf gleichzeitig. Wer währenddessen aktualisiert, wartet auf diesen Lauf – außer es läuft nur ein Teil-Lauf
+// (veraltete Titel) und alle Titel sind gefragt: dann folgt danach ein vollständiger Lauf
+let running: { full: boolean; promise: Promise<WatchRefresh> } | undefined;
 let lastAuto = 0;
+
+async function refreshItems(full: boolean): Promise<WatchRefresh> {
+  const items = await db.watchItem.findMany({ where: full ? undefined : staleWhere(), select: { symbol: true, isin: true, name: true } });
+  const results = await mapLimit(items, 3, (i) => checkAndStore(i.symbol, i.isin ?? undefined, "refresh"));
+  return { count: items.length, errors: results.flatMap((e, i) => (e ? [`${items[i].name}: ${e}`] : [])) };
+}
 
 /** Alle Titel neu prüfen (staleOnly: nur die, deren letzter Check älter als 12 Stunden ist). */
 export function refreshWatchlist(opts: { staleOnly?: boolean } = {}): Promise<WatchRefresh> {
-  running ??= (async () => {
-    const items = await db.watchItem.findMany({ where: opts.staleOnly ? staleWhere() : undefined, select: { symbol: true, isin: true, name: true } });
-    const results = await mapLimit(items, 3, (i) => checkAndStore(i.symbol, i.isin ?? undefined, "refresh"));
-    return { count: items.length, errors: results.flatMap((e, i) => (e ? [`${items[i].name}: ${e}`] : [])) };
+  const full = !opts.staleOnly;
+  if (running && (running.full || !full)) return running.promise;
+  const before = running?.promise.catch(() => undefined);
+  const promise = (async () => {
+    await before;
+    return refreshItems(full);
   })().finally(() => {
-    running = undefined;
+    if (running?.promise === promise) running = undefined;
   });
-  return running;
+  running = { full, promise };
+  return promise;
 }
 
 /** Startet im Hintergrund eine Aktualisierung veralteter Titel; true, wenn gerade eine läuft. */

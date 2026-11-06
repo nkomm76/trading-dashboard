@@ -148,33 +148,38 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
   const grid = [...days].filter((d) => d >= start && d <= today).sort();
 
   const sortedCash = [...cash].sort((a, b) => a.date.localeCompare(b.date));
-  const series = holdings.map((h) => ({ cls: h.assetClass ?? "STOCK", txs: sortTx(h.txs), closes: h.closes.map((c) => ({ day: dayOf(c.time), close: c.close })) }));
+  // Je Reihe ein Zeiger auf Buchungen und Kurse: das Raster läuft aufsteigend, also nur vorwärts gehen (linear statt quadratisch)
+  const series = holdings.map((h) => ({
+    cls: h.assetClass ?? "STOCK",
+    txs: sortTx(h.txs),
+    closes: h.closes.map((c) => ({ day: dayOf(c.time), close: c.close })).sort((x, y) => x.day.localeCompare(y.day)),
+    txIdx: 0,
+    closeIdx: -1,
+    pos: undefined as ReturnType<typeof computePosition> | undefined,
+  }));
+  let cashIdx = -1;
 
   return grid.map((day) => {
     let securities = 0;
     let cost = 0;
     const byClass: Record<AssetClass, number> = { STOCK: 0, ETF: 0, CRYPTO: 0 };
     for (const s of series) {
-      const until = s.txs.filter((t) => t.date <= day);
-      if (!until.length) continue;
-      const pos = computePosition(until);
-      if (pos.quantity <= 0) continue;
+      // Position nur neu rechnen, wenn bis zu diesem Tag neue Buchungen dazukommen
+      const before = s.txIdx;
+      while (s.txIdx < s.txs.length && s.txs[s.txIdx].date <= day) s.txIdx++;
+      if (s.txIdx !== before) s.pos = computePosition(s.txs.slice(0, s.txIdx));
+      while (s.closeIdx + 1 < s.closes.length && s.closes[s.closeIdx + 1].day <= day) s.closeIdx++;
+      const pos = s.pos;
+      if (!pos || pos.quantity <= 0) continue;
       cost += pos.cost + pos.openFeesEur;
       // letzter Schlusskurs bis zu diesem Tag; vor dem ersten Kurs zum Einstand
-      let price: number | undefined;
-      for (const c of s.closes) {
-        if (c.day > day) break;
-        price = c.close;
-      }
+      const price = s.closeIdx >= 0 ? s.closes[s.closeIdx].close : undefined;
       const value = price !== undefined ? price * pos.quantity : pos.cost;
       securities += value;
       byClass[s.cls] += value;
     }
-    let cashValue: number | undefined;
-    for (const c of sortedCash) {
-      if (c.date > day) break;
-      cashValue = c.amount;
-    }
+    while (cashIdx + 1 < sortedCash.length && sortedCash[cashIdx + 1].date <= day) cashIdx++;
+    const cashValue = cashIdx >= 0 ? sortedCash[cashIdx].amount : undefined;
     return { date: day, securities, byClass, cost, cash: cashValue, total: securities + (cashValue ?? 0) };
   });
 }

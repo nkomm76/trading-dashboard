@@ -76,7 +76,7 @@ export function rate(m: Metrics, sector: string | undefined, outlook: OutlookInp
   }
   if (status === "suspended") {
     const last = m.lastDividend?.value.date;
-    reasons.push({ criterion: "Dividende", light: "RED", text: `Dividende eingestellt: keine Zahlung in den letzten 12 Monaten${last ? `, letzte am ${day(last)}` : ""}` });
+    reasons.push({ criterion: "Dividende", light: "RED", text: `Dividende eingestellt: keine Zahlung in den letzten 13 Monaten${last ? `, letzte am ${day(last)}` : ""}` });
   }
   if (pays && m.payoutEps && !s.useFcfPayoutOnly) {
     const b = s.payoutEps ?? th.payoutEps;

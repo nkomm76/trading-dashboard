@@ -11,7 +11,7 @@ import { refreshAll, refreshStock } from "@/lib/refresh";
 import { getFxRates, savePortfolioSettings, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, localToday } from "@/lib/format";
 import { runCheck, type CheckResponse } from "@/lib/check-server";
 import { addToWatchlist, isWatched, refreshWatchlist, startWatchlistRefresh } from "@/lib/watchlist-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
@@ -159,7 +159,11 @@ export async function runRefresh(withOutlook: boolean): Promise<FormState> {
 
 export async function saveSettings(_: FormState, formData: FormData): Promise<FormState> {
   await requireAuth();
-  const n = (k: string) => Number(parseNum(formData.get(k))) / 100;
+  // Leere Felder ergeben NaN statt 0, damit die Prüfung unten sie meldet
+  const n = (k: string) => {
+    const raw = parseNum(formData.get(k));
+    return raw === "" ? NaN : Number(raw) / 100;
+  };
   const t: Thresholds = {
     ...DEFAULT_THRESHOLDS,
     payoutEps: { green: n("payoutEps.green"), orange: n("payoutEps.orange") },
@@ -306,7 +310,7 @@ export async function saveCash(_: FormState, formData: FormData): Promise<FormSt
   const parsed = CashSchema.safeParse({ date: formData.get("date"), amount: raw, note: String(formData.get("note") ?? "") || undefined });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const c = parsed.data;
-  if (c.date > new Date().toISOString().slice(0, 10)) return { error: "Das Datum liegt in der Zukunft." };
+  if (c.date > localToday()) return { error: "Das Datum liegt in der Zukunft." };
   const date = new Date(c.date);
   await db.cashBalance.upsert({ where: { date }, create: { date, amount: c.amount, note: c.note }, update: { amount: c.amount, note: c.note ?? null } });
   revalidatePath("/", "layout");

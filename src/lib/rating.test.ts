@@ -60,6 +60,9 @@ describe("Anzeige an der Grenze", () => {
 describe("dividendStatus", () => {
   it("unterscheidet zahlend, eingestellt und nie gezahlt", () => {
     expect(dividendStatus([{ date: "2026-03-01", amount: 1 }], "2026-11-06")).toBe("paying");
+    // Jahreszahler, dessen Ex-Tag dieses Jahr ein paar Tage später liegt: zahlt weiter
+    expect(dividendStatus([{ date: "2025-06-01", amount: 1 }], "2026-06-03")).toBe("paying");
+    expect(dividendStatus([{ date: "2025-06-01", amount: 1 }], "2026-07-10")).toBe("suspended");
     expect(dividendStatus([{ date: "2024-06-01", amount: 1 }], "2026-11-06")).toBe("suspended");
     expect(dividendStatus([{ date: "2022-06-01", amount: 1 }], "2026-11-06")).toBe("none");
     expect(dividendStatus([], "2026-11-06")).toBe("none");

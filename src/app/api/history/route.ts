@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { toTx } from "@/lib/portfolio";
 import { eurCloses } from "@/lib/ema-server";
 import { wealthHistory } from "@/lib/wealth";
+import { localToday } from "@/lib/format";
 
 const DAY = 86_400_000;
 // Kurse ändern sich nur einmal je Handelstag sichtbar: Ergebnis 30 Minuten halten, solange Buchungen und Kontostände gleich sind
+const TTL = 30 * 60_000;
 const cache = new Map<string, { at: number; body: unknown }>();
 
 export async function GET() {
@@ -21,7 +23,7 @@ export async function GET() {
   const hit = cache.get(key);
   // Nie im Browser zwischenspeichern: die Antwort ändert sich mit jeder Buchung und jedem Kontostand
   const headers = { "Cache-Control": "no-store" };
-  if (hit && Date.now() - hit.at < 30 * 60_000) return NextResponse.json(hit.body, { headers });
+  if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.body, { headers });
 
   const first = inputs.flatMap((i) => i.txs.map((t) => t.date)).sort()[0];
   const from = first ? new Date(Date.parse(first) - 7 * DAY) : new Date();
@@ -30,13 +32,16 @@ export async function GET() {
   const closes = await Promise.all(inputs.map((i) => eurCloses(i.symbol, from, interval)));
   const missing = inputs.filter((_, n) => !closes[n].length).map((i) => i.symbol);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const points = wealthHistory(
     inputs.map((i, n) => ({ assetClass: i.assetClass, txs: i.txs, closes: closes[n] })),
     cashRows,
     today,
   );
   const body = { points, cashSince: cashRows[0]?.date, missing };
+  // Abgelaufene Einträge entfernen und höchstens wenige Stände halten (jede Buchung erzeugt einen neuen Schlüssel)
+  for (const [k, v] of cache) if (Date.now() - v.at >= TTL) cache.delete(k);
+  while (cache.size >= 4) cache.delete(cache.keys().next().value!);
   cache.set(key, { at: Date.now(), body });
   return NextResponse.json(body, { headers });
 }

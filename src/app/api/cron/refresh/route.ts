@@ -8,7 +8,8 @@ export const maxDuration = 600;
 // Aufruf durch den Hostinger-Cronjob: GET /api/cron/refresh mit Header "Authorization: Bearer <CRON_SECRET>"
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  const given = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? request.nextUrl.searchParams.get("token") ?? "";
+  // Nur über den Header: ein Schlüssel in der Adresse landet in Proxy- und Server-Protokollen
+  const given = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
   if (!secret || given.length !== secret.length || !timingSafeEqual(Buffer.from(given), Buffer.from(secret))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

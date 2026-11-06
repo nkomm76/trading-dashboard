@@ -3,9 +3,10 @@
 import { startTransition, useActionState, useRef } from "react";
 import { saveDividend, type FormState } from "@/app/actions";
 import type { SuggestionRow } from "@/lib/dividend-data";
+import { localToday } from "@/lib/format";
 
 const de = (v: number | undefined) => (v === undefined ? "" : v.toFixed(2).replace(".", ","));
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localToday();
 
 // Ohne action-Prop, damit Eingaben bei Fehlern erhalten bleiben
 function useSubmit(action: (data: FormData) => void) {

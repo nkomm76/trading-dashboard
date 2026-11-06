@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { savePurchase, type FormState } from "@/app/actions";
 import type { SearchHit } from "@/lib/data/yahoo";
+import { localToday } from "@/lib/format";
 
 type Initial = {
   id: number;
@@ -19,7 +20,7 @@ type Initial = {
 
 export type Holding = { symbol: string; name: string; currency: string; quantity: number };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localToday();
 const de = (v: number) => String(v).replace(".", ",");
 const fmtQty = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 8 });
 const TYPE_LABEL: Record<string, string> = { ETF: "ETF", CRYPTOCURRENCY: "Krypto" };
