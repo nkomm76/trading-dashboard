@@ -1,7 +1,7 @@
 # Dividenden-Dashboard als Container: eigenständiger Next.js-Server, läuft als Nutzer ohne Root-Rechte.
 # Stufen: deps (Pakete) → build (Next.js-Build) → tools (Migrationen, Notfall-Skripte) und runner (App)
 
-FROM node:24-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 # openssl braucht die Migrations-Engine von Prisma; deren Programmdatei lädt "npm ci" per Install-Skript
 RUN apk add --no-cache openssl
@@ -19,7 +19,7 @@ FROM build AS tools
 USER node
 CMD ["npx", "prisma", "migrate", "deploy"]
 
-FROM node:24-alpine AS runner
+FROM node:26-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./
