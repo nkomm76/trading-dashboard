@@ -1,7 +1,6 @@
 import "server-only";
-import { evaluateCheck, type CheckResult, type TrendInput } from "./check";
-import { ema } from "./ema";
-import { eurCloses } from "./ema-server";
+import { evaluateCheck, type CheckResult } from "./check";
+import { trendOf } from "./ema-server";
 import { toEurView } from "./check-eur";
 import { toEurConverter } from "./data/fx-history";
 import { convert, fetchEcbRates } from "./data/fx";
@@ -45,8 +44,8 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   // Eulerpool parallel laden (nur per ISIN); dient ausschließlich zum Verlängern der Jahreshistorie
   const isin = ISIN.test(q) ? q : undefined;
   const eulerpool = isin ? fetchEulerpoolAnnual(isin) : Promise.resolve([]);
-  // Tageskurse für das Kriterium EMA 200, mit 8 Jahren Vorlauf und in Euro wie im Kurschart
-  const closes = eurCloses(target, new Date(Date.now() - 8 * 365 * 86_400_000), "1d");
+  // Kurs und EMA 200 für die Ampel: 8 Jahre Tageskurse in Euro wie im Kurschart
+  const trendP = trendOf(target).catch(() => undefined);
 
   let market;
   try {
@@ -85,7 +84,6 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
       : x.rejected && ep.length
         ? `Eulerpool nicht verwendet: ${x.rejected}`
         : undefined;
-  const growthExt = extendHistory(growthRows, ep);
   // Für das Ø-KGV bis zu 10 Jahre Gewinnhistorie
   const epsExt = extendHistory(growthRows, ep, 11);
   // REITs: Eulerpool zieht Immobilienkäufe vom Free Cashflow ab – für den DCF nicht vergleichbar
@@ -95,27 +93,23 @@ export async function runCheck(query: string, symbol?: string): Promise<CheckRes
   const dcfBase = secFcf.length ? extendHistory(market.annual, secFcf, 6, ["cashflow"]) : undefined;
   if (dcfBase?.addedYears.length && !sources.includes("SEC")) sources.push("SEC");
   const dcfExt = market.sector === "Real Estate" ? undefined : extendHistory(dcfBase?.rows ?? market.annual, ep);
-  if (growthExt.addedYears.length || dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
+  if (dcfExt?.addedYears.length || epsExt.addedYears.length) sources.push("Eulerpool");
 
-  const daily = await closes;
-  const emaLine = ema(daily, 200);
-  const last = daily.at(-1);
-  const trend: TrendInput | undefined =
-    last && emaLine.length ? { price: last.close, ema200: emaLine[emaLine.length - 1].value, asOf: new Date(last.time).toISOString().slice(0, 10), currency: "EUR" } : undefined;
+  const trend = await trendP;
+  const thresholds = await getThresholds();
 
   const rates = (await getFxRates())?.rates ?? (await fetchEcbRates().catch(() => undefined))?.value;
   const native = evaluateCheck(market, {
-    growthRows: growthExt.rows,
-    growthNote: describe(growthExt),
     dcfHistory: dcfExt ? { annual: dcfExt.rows, note: describe(dcfExt) } : dcfBase && { annual: dcfBase.rows },
     epsHistory: { annual: epsExt.rows, note: describe(epsExt) },
     sources,
     chartQuarterly,
     trend,
-    dcf: (await getThresholds()).dcf,
+    thresholds,
+    dcf: thresholds.dcf,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
-  // Anzeige in Euro (Tageskurse); bewertet wird in Originalwährung, nur die EMA 200 wie im Kurschart in Euro
+  // Anzeige in Euro (Tageskurse); bewertet wird in Originalwährung, nur die EMA 200 wie im Kurschart in Euro (wie im Depot)
   const [trade, fin] = await Promise.all([toEurConverter(market.currency), toEurConverter(market.financialCurrency ?? market.currency)]);
   const result = trade && fin ? toEurView(native, market.dividends, trade, fin) : native;
   const res = { result, listings, isin };

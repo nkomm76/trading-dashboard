@@ -132,7 +132,7 @@ export function StockCheck() {
               <div className="flex flex-col items-end gap-2">
                 <div className="flex items-center gap-2 text-sm">
                   <Light light={r.overall} size="lg" />
-                  <span className="font-medium">{r.overall === "GREY" ? OVERALL.GREY : `${r.passed} von ${r.items.length} sehr gut`}</span>
+                  <span className="font-medium">{r.overall === "GREY" ? OVERALL.GREY : `${r.passed} von ${r.rated} grün`}</span>
                 </div>
                 <WatchButton key={r.symbol} symbol={r.symbol} isin={state?.isin} watched={state?.watched} />
               </div>
@@ -202,17 +202,18 @@ export function StockCheck() {
                 className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === id ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-foreground"}`}
               >
                 {label}
-                {id === "bewertung" && r.overall !== "GREY" && <span className="ml-1.5 text-xs text-muted">{r.passed}/{r.items.length}</span>}
+                {id === "bewertung" && r.overall !== "GREY" && <span className="ml-1.5 text-xs text-muted">{r.passed}/{r.rated}</span>}
               </button>
             ))}
           </div>
 
           <TabPanel id="bewertung" tab={tab} visited={visited}>
             <section className="card divide-y divide-border">
+              {r.items.length === 0 && <p className="p-4 text-sm text-muted">Keine Kennzahlen mit Datenquelle für die Ampel.</p>}
               {r.items.map((i) => (
                 <div key={i.key} className="flex gap-3 p-4">
                   <span className="mt-1">
-                    <Light light={i.light} />
+                    <Light light={i.light} label={i.light === "GREY" ? "Hinweis, zählt nicht zur Ampel" : undefined} />
                   </span>
                   <div className="min-w-0">
                     <p className="text-sm text-muted">{i.title}</p>
@@ -228,11 +229,10 @@ export function StockCheck() {
                 </div>
               ))}
             </section>
-            {r.nativeCurrency && (
-              <p className="text-xs text-muted">
-                Dividende, Ausschüttungsquote und Wachstum rechnen in der Originalwährung ({r.nativeCurrency}), damit Wechselkurse die Ampel nicht verfälschen – Beträge dort in {r.nativeCurrency}. Die EMA 200 rechnet wie im Kurschart in Euro.
-              </p>
-            )}
+            <p className="text-xs text-muted">
+              Dieselbe Ampel wie im Depot, Schwellen unter <a href="/einstellungen" className="text-accent">Einstellungen</a>. Die schlechteste Farbe zählt; zahlt die Aktie keine Dividende, entfallen Payout, Dividendenwachstum und Kürzung.
+              {r.nativeCurrency && ` Payout, Verschuldung und Dividendenwachstum rechnen in der Originalwährung (${r.nativeCurrency}), damit Wechselkurse die Ampel nicht verfälschen; die EMA 200 rechnet wie im Kurschart in Euro.`}
+            </p>
           </TabPanel>
           <TabPanel id="chart" tab={tab} visited={visited}>
             <section className="card p-5">

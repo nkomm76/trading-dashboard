@@ -15,7 +15,7 @@ export default async function SettingsPage() {
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="card p-5">
         <h1 className="mb-1 text-lg font-semibold">Ampel-Schwellen</h1>
-        <p className="mb-4 text-sm text-muted">Gesamtfarbe = schlechtestes Einzelkriterium. Branchen-Sonderregeln für Immobilien (REITs) und Versorger bleiben aktiv.</p>
+        <p className="mb-4 text-sm text-muted">Eine Ampel für Depot, Aktien Check und Watchliste. Gesamtfarbe = schlechtestes Einzelkriterium. Zahlt eine Aktie keine Dividende, entfallen Payout, Dividendenwachstum und Kürzung; eine in den letzten 2 Jahren eingestellte Dividende zählt rot. Branchen-Sonderregeln für Immobilien (REITs) und Versorger bleiben aktiv.</p>
         <SettingsForm t={t} />
       </section>
 

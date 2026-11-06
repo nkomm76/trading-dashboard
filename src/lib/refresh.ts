@@ -8,6 +8,7 @@ import { annualTotals, computeMetrics, fcfOf } from "./metrics";
 import { evaluateOutlook } from "./outlook";
 import { rate } from "./rating";
 import { getThresholds } from "./settings";
+import { trendOf } from "./ema-server";
 import { computePosition } from "./position";
 import { toTx } from "./portfolio";
 
@@ -42,10 +43,10 @@ function buildSeries(market: MarketData) {
 
 export async function refreshStock(stockId: number, rates: Record<string, number> | undefined, opts: { outlook: boolean }) {
   const stock = await db.stock.findUniqueOrThrow({ where: { id: stockId }, include: { purchases: true } });
-  const market = await fetchMarketData(stock.symbol);
-
-  // Ampel, SEC-Zahlen und KI-Ausblick gibt es nur für Aktien; ETF und Krypto brauchen nur Kurs und Ausschüttungen
+  // Ampel (inkl. EMA 200), SEC-Zahlen und KI-Ausblick gibt es nur für Aktien; ETF und Krypto brauchen nur Kurs und Ausschüttungen
   const isStock = stock.assetClass === "STOCK";
+  const [market, trend] = await Promise.all([fetchMarketData(stock.symbol), isStock ? trendOf(stock.symbol).catch(() => undefined) : undefined]);
+
   let cik = stock.cik ?? undefined;
   if (isStock && !stock.symbol.includes(".") && market.currency === "USD") {
     cik ??= await lookupCik(stock.symbol).catch(() => undefined);
@@ -61,6 +62,8 @@ export async function refreshStock(stockId: number, rates: Record<string, number
     avgCost,
     toTradingCurrency: (v) => (rates && market.financialCurrency ? convert(v, market.financialCurrency, market.currency, rates) : undefined),
   });
+
+  if (trend) metrics.trend = trend;
 
   const date = today();
   await db.stock.update({

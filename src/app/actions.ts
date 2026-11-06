@@ -167,6 +167,7 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
     debtToEquity: { green: n("debtToEquity.green") * 100, orange: n("debtToEquity.orange") * 100 }, // Verhältnis, kein Prozentwert
     debtChangeYoY: { green: n("debtChangeYoY.green"), orange: n("debtChangeYoY.orange") },
     dividendCagr5: { green: n("dividendCagr5.green"), orange: n("dividendCagr5.orange") },
+    trendBelow: n("trendBelow"),
     minCriteria: Number(formData.get("minCriteria") ?? 3),
     dcf: { discountRate: n("dcf.discountRate"), terminalGrowth: n("dcf.terminalGrowth"), maxGrowth: n("dcf.maxGrowth") },
   };
@@ -174,6 +175,7 @@ export async function saveSettings(_: FormState, formData: FormData): Promise<Fo
   if ([...bands, t.dividendCagr5].some((b) => !Number.isFinite(b.green) || !Number.isFinite(b.orange)))
     return { error: "Bitte alle Felder mit Zahlen füllen." };
   if (bands.some((b) => b.green > b.orange)) return { error: "Die Grün-Grenze muss unter der Rot-Grenze liegen." };
+  if (!Number.isFinite(t.trendBelow) || t.trendBelow < 0 || t.trendBelow >= 1) return { error: "Die EMA-200-Grenze bitte als Prozent zwischen 0 und 100 eingeben." };
   if (Object.values(t.dcf).some((v) => !Number.isFinite(v) || v < 0)) return { error: "Bitte alle DCF-Annahmen als Prozentwerte eingeben." };
   if (t.dcf.discountRate <= t.dcf.terminalGrowth) return { error: "Der Abzinsungssatz muss über dem ewigen Wachstum liegen." };
   await saveThresholds(t);

@@ -138,7 +138,7 @@ export default async function StockPage({ params }: { params: Promise<{ id: stri
           <ul className="space-y-2 text-sm">
             {reasons.map((r, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className="mt-1"><Light light={r.light} /></span>
+                <span className="mt-1"><Light light={r.light} label={r.light === "GREY" ? "Hinweis, zählt nicht zur Ampel" : undefined} /></span>
                 <span>
                   <span className="font-medium">{r.criterion}:</span> {r.text}
                 </span>

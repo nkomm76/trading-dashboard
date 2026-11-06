@@ -22,6 +22,7 @@ const base: CheckResult = {
   items: [{ key: "dividends", title: "Dividende", light: "GREEN", verdict: "steigend", details: ["2024: 4,00"] }],
   overall: "GREEN",
   passed: 1,
+  rated: 1,
 };
 const divs = [
   { date: "2024-05-01", amount: 4 },

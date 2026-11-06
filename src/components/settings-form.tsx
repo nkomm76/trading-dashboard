@@ -45,6 +45,11 @@ export function SettingsForm({ t }: { t: Thresholds }) {
           ))}
         </tbody>
       </table>
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        Kurs zur EMA 200: orange bis
+        <input className="input w-20" name="trendBelow" defaultValue={p(t.trendBelow)} inputMode="decimal" />
+        <span className="text-muted">% darunter (grün darüber, rot tiefer)</span>
+      </label>
       <label className="flex items-center gap-2 text-sm">
         Mindestanzahl Kriterien für eine Farbe
         <input className="input w-16" name="minCriteria" type="number" min={1} max={6} defaultValue={t.minCriteria} />

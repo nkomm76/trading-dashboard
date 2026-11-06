@@ -15,6 +15,10 @@ export type Metrics = {
   dividendCagr5?: Sourced;
   dividendCagr10?: Sourced;
   dividendCut?: Sourced<boolean>;
+  /** Zahlt die Aktie Dividende? „suspended“ = keine Zahlung in 12 Monaten, aber in den 2 Jahren davor */
+  dividendStatus?: Sourced<"paying" | "none" | "suspended">;
+  /** Letzter Kurs und EMA 200 aus Tageskursen, beide in Euro wie im Kurschart */
+  trend?: Sourced<{ price: number; ema200: number }>;
   frequency?: Sourced<Frequency>;
   exMonths?: Sourced<string[]>;
   lastDividend?: Sourced<{ date: string; amount: number }>;
@@ -95,6 +99,14 @@ const PER_YEAR: Record<Frequency, number> = {
 };
 
 /** Kürzung: letzte Zahlung > 5 % unter der vergleichbaren Zahlung ein Jahr zuvor. */
+/** Zahlung in den letzten 12 Monaten → zahlt; sonst Zahlung 12–36 Monate zurück → eingestellt; sonst keine Dividende. */
+export function dividendStatus(divs: DividendPayment[], asOf = today()): "paying" | "none" | "suspended" {
+  const age = (d: DividendPayment) => daysBetween(d.date, asOf);
+  if (divs.some((d) => age(d) >= 0 && age(d) < 365)) return "paying";
+  if (divs.some((d) => age(d) >= 365 && age(d) < 3 * 365)) return "suspended";
+  return "none";
+}
+
 export function detectDividendCut(divs: DividendPayment[], frequency: Frequency | undefined): boolean | undefined {
   const n = frequency ? PER_YEAR[frequency] : 0;
   if (!n || divs.length <= n) return undefined;
@@ -173,6 +185,7 @@ export function computeMetrics({ market, avgCost, toTradingCurrency, asOf = toda
   if (last) m.lastDividend = { value: last, source: Y, asOf: last.date };
   const cut = detectDividendCut(divs, freq);
   if (cut !== undefined) m.dividendCut = { value: cut, source: CALC, asOf };
+  m.dividendStatus = { value: dividendStatus(divs, asOf), source: CALC, asOf, note: "aus den Zahlungen der letzten 3 Jahre" };
 
   // EPS: bevorzugt Summe der letzten 4 Quartale, sonst Yahoo-TTM, sonst letztes Geschäftsjahr
   const q = market.quarterly;

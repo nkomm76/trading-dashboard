@@ -19,7 +19,7 @@ export type WatchSummary = {
 export function summarize(r: CheckResult): WatchSummary {
   return {
     passed: r.passed,
-    total: r.items.length,
+    total: r.rated,
     items: r.items.map((i) => ({ title: i.title, light: i.light, verdict: i.verdict })),
     price: r.price,
     expectedYield: r.expectedYield?.value,

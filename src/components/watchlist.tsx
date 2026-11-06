@@ -25,7 +25,7 @@ export function Watchlist({ rows, refreshing }: { rows: WatchRow[]; refreshing?:
             <Link href="/check" className="text-accent">
               Aktien Check
             </Link>{" "}
-            aufnehmen. Ampel nach den Kriterien des Aktien Checks.
+            aufnehmen. Ampel nach denselben Regeln wie im Depot (inkl. EMA 200).
           </p>
           {refreshing && <p className="text-xs text-light-orange">Titel werden im Hintergrund aktualisiert – Seite in ein bis zwei Minuten neu laden.</p>}
         </div>
@@ -138,7 +138,7 @@ export function Watchlist({ rows, refreshing }: { rows: WatchRow[]; refreshing?:
                   {s.items.map((i) => (
                     <li key={i.title} className="flex items-start gap-2">
                       <span className="mt-1">
-                        <Light light={i.light} />
+                        <Light light={i.light} label={i.light === "GREY" ? "Hinweis, zählt nicht zur Ampel" : undefined} />
                       </span>
                       <span>
                         <span className="text-muted">{i.title}:</span> {i.verdict}
