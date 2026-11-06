@@ -21,7 +21,8 @@ export type Holding = { symbol: string; name: string; currency: string; quantity
 
 const today = () => new Date().toISOString().slice(0, 10);
 const de = (v: number) => String(v).replace(".", ",");
-const fmtQty = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 3 });
+const fmtQty = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 8 });
+const TYPE_LABEL: Record<string, string> = { ETF: "ETF", CRYPTOCURRENCY: "Krypto" };
 
 export function PurchaseForm({
   initial,
@@ -46,7 +47,7 @@ export function PurchaseForm({
   useEffect(() => {
     if (type !== "BUY" || picked || query.trim().length < 2) return;
     const t = setTimeout(async () => {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}&crypto=1`);
       setHits(res.ok ? await res.json() : []);
     }, 300);
     return () => clearTimeout(t);
@@ -103,7 +104,7 @@ export function PurchaseForm({
 
       {type === "BUY" ? (
         <label className="block">
-          <span className="mb-1 block text-sm">Aktie (Name, ISIN oder Ticker)</span>
+          <span className="mb-1 block text-sm">Aktie, ETF oder Krypto (Name, ISIN oder Kürzel)</span>
           <input
             className="input"
             value={query}
@@ -112,7 +113,7 @@ export function PurchaseForm({
               setPicked(undefined);
               setHits([]);
             }}
-            placeholder="z. B. Allianz, DE0008404005 oder JNJ"
+            placeholder="z. B. Allianz, IE00B3RBWM25 oder Bitcoin"
             autoComplete="off"
             disabled={Boolean(initial)}
           />
@@ -130,7 +131,10 @@ export function PurchaseForm({
                       setHits([]);
                     }}
                   >
-                    <span>{h.name}</span>
+                    <span>
+                      {h.name}
+                      {h.type && TYPE_LABEL[h.type] && <span className="ml-2 rounded bg-background px-1.5 py-0.5 text-xs text-muted">{TYPE_LABEL[h.type]}</span>}
+                    </span>
                     <span className="whitespace-nowrap text-xs text-muted">
                       {h.symbol} · {h.exchange}
                     </span>
@@ -139,13 +143,17 @@ export function PurchaseForm({
               ))}
             </ul>
           )}
-          {!initial && <span className="mt-1 block text-xs text-muted">Wähle den Börsenplatz, an dem du gekauft hast (z. B. Xetra = „.DE“).</span>}
+          {!initial && (
+            <span className="mt-1 block text-xs text-muted">
+              Wähle den Börsenplatz, an dem du gekauft hast (z. B. Xetra = „.DE“); bei Krypto das Euro-Paar (z. B. BTC-EUR).
+            </span>
+          )}
         </label>
       ) : (
         <label className="block">
-          <span className="mb-1 block text-sm">Aktie aus deinem Depot</span>
+          <span className="mb-1 block text-sm">Titel aus deinem Depot</span>
           {holdings.length === 0 && !initial ? (
-            <p className="text-sm text-muted">Du hast aktuell keine Aktien im Bestand.</p>
+            <p className="text-sm text-muted">Du hast aktuell keine Wertpapiere im Bestand.</p>
           ) : (
             <select className="input" value={sellSymbol} onChange={(e) => setSellSymbol(e.target.value)} disabled={Boolean(initial)}>
               <option value="">Bitte wählen …</option>
@@ -173,7 +181,7 @@ export function PurchaseForm({
           )}
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm">{type === "SELL" ? "Verkaufskurs je Aktie (€)" : "Kaufkurs je Aktie (€)"}</span>
+          <span className="mb-1 block text-sm">{type === "SELL" ? "Verkaufskurs je Stück (€)" : "Kaufkurs je Stück (€)"}</span>
           <input className="input" name="price" inputMode="decimal" defaultValue={initial ? de(initial.price) : ""} required />
           <span className="mt-1 block text-xs text-muted">in Euro laut Abrechnung, ohne Gebühren</span>
         </label>

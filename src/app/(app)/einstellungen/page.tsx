@@ -1,11 +1,13 @@
 import { db } from "@/lib/db";
-import { getThresholds } from "@/lib/settings";
+import { getPortfolioSettings, getThresholds } from "@/lib/settings";
+import { PortfolioRulesForm } from "@/components/portfolio-rules-form";
 import { SettingsForm } from "@/components/settings-form";
 import { RefreshButton } from "@/components/refresh-button";
 import { eulerpoolEnabled } from "@/lib/data/eulerpool";
 
 export default async function SettingsPage() {
   const t = await getThresholds();
+  const rules = await getPortfolioSettings();
   const logs = await db.refreshLog.findMany({ orderBy: { startedAt: "desc" }, take: 10 });
   const kiActive = Boolean(process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-"));
 
@@ -18,6 +20,11 @@ export default async function SettingsPage() {
       </section>
 
       <section className="space-y-6">
+        <div id="depot" className="card scroll-mt-4 p-5">
+          <h2 className="mb-1 font-semibold">Depot-Regeln</h2>
+          <p className="mb-4 text-sm text-muted">Eigene Ziele für die Übersicht. Die Übersicht zeigt nur die Abweichung, sie empfiehlt nichts.</p>
+          <PortfolioRulesForm s={rules} defaultMax={0.1} />
+        </div>
         <div className="card p-5">
           <h2 className="mb-1 font-semibold">Daten aktualisieren</h2>
           <p className="mb-4 text-sm text-muted">

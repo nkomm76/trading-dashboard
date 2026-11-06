@@ -8,13 +8,14 @@ import { db } from "@/lib/db";
 import { createSession, destroySession, requireAuth } from "@/lib/session";
 import { fetchMarketData } from "@/lib/data/yahoo";
 import { refreshAll, refreshStock } from "@/lib/refresh";
-import { getFxRates, saveThresholds } from "@/lib/settings";
+import { getFxRates, savePortfolioSettings, saveThresholds } from "@/lib/settings";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
 import { fmtDate } from "@/lib/format";
 import { runCheck, type CheckResponse } from "@/lib/check-server";
 import { addToWatchlist, isWatched, refreshWatchlist, startWatchlistRefresh } from "@/lib/watchlist-server";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/rating";
+import { assetClassFromQuoteType, BUCKETS, type AssetClass } from "@/lib/wealth";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -49,7 +50,7 @@ export async function logout() {
 
 const PurchaseSchema = z.object({
   type: z.enum(["BUY", "SELL"]),
-  symbol: z.string().trim().min(1, "Bitte eine Aktie auswählen").max(32),
+  symbol: z.string().trim().min(1, "Bitte einen Titel auswählen").max(32),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum fehlt"),
   price: z.coerce.number().positive("Kurs muss größer als 0 sein"),
   quantity: z.coerce.number().positive("Stückzahl muss größer als 0 sein"),
@@ -81,7 +82,7 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
   const id = Number(formData.get("id") ?? 0);
 
   let stock = await db.stock.findUnique({ where: { symbol: p.symbol }, include: { purchases: true } });
-  if (!stock && p.type === "SELL") return { error: "Diese Aktie ist nicht in deinem Depot." };
+  if (!stock && p.type === "SELL") return { error: "Dieser Titel ist nicht in deinem Depot." };
   if (!stock) {
     let market;
     try {
@@ -90,7 +91,15 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
       return { error: `Zum Symbol ${p.symbol} wurden keine Kursdaten gefunden.` };
     }
     stock = await db.stock.create({
-      data: { symbol: p.symbol, name: market.name, currency: market.currency, exchange: market.exchange, sector: market.sector, isin: p.isin },
+      data: {
+        symbol: p.symbol,
+        name: market.name,
+        currency: market.currency,
+        exchange: market.exchange,
+        sector: market.sector,
+        isin: p.isin,
+        assetClass: assetClassFromQuoteType(market.quoteType),
+      },
       include: { purchases: true },
     });
   }
@@ -99,7 +108,7 @@ export async function savePurchase(_: FormState, formData: FormData): Promise<Fo
   const others = stock.purchases.filter((x) => x.id !== id).map(toTx);
   const after = computePosition([...others, { type: p.type, date: p.date, price: p.price, quantity: p.quantity, fees: p.fees }]);
   if (after.oversold) {
-    return { error: `Am ${fmtDate(after.oversold.date)} wären ${after.oversold.missing.toLocaleString("de-DE")} Stück mehr verkauft als im Bestand.` };
+    return { error: `Am ${fmtDate(after.oversold.date)} wären ${after.oversold.missing.toLocaleString("de-DE", { maximumFractionDigits: 8 })} Stück mehr verkauft als im Bestand.` };
   }
 
   const data = { type: p.type, stockId: stock.id, date: new Date(p.date), price: p.price, quantity: p.quantity, fees: p.fees, note: p.note };
@@ -277,4 +286,64 @@ export async function runWatchRefresh(): Promise<FormState> {
   return res.errors.length
     ? { error: `${res.count - res.errors.length} von ${res.count} aktualisiert. Fehler: ${res.errors.join("; ")}` }
     : { ok: `${res.count} Werte aktualisiert.` };
+}
+
+// --- Barbestand und Depot-Regeln ---
+
+const CashSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum fehlt"),
+  amount: z.coerce.number().min(0, "Der Kontostand kann nicht negativ sein").max(1e12),
+  note: z.string().trim().max(255).optional(),
+});
+
+/** Kontostand eintragen; ein zweiter Eintrag am selben Tag ersetzt den ersten. */
+export async function saveCash(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAuth();
+  const raw = parseNum(formData.get("amount"));
+  if (raw === "") return { error: "Bitte den Kontostand eingeben." };
+  const parsed = CashSchema.safeParse({ date: formData.get("date"), amount: raw, note: String(formData.get("note") ?? "") || undefined });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const c = parsed.data;
+  if (c.date > new Date().toISOString().slice(0, 10)) return { error: "Das Datum liegt in der Zukunft." };
+  const date = new Date(c.date);
+  await db.cashBalance.upsert({ where: { date }, create: { date, amount: c.amount, note: c.note }, update: { amount: c.amount, note: c.note ?? null } });
+  revalidatePath("/", "layout");
+  return { ok: "Kontostand gespeichert." };
+}
+
+export async function deleteCash(formData: FormData) {
+  await requireAuth();
+  const id = Number(formData.get("id"));
+  if (Number.isInteger(id)) await db.cashBalance.deleteMany({ where: { id } });
+  revalidatePath("/", "layout");
+}
+
+export async function setAssetClass(formData: FormData) {
+  await requireAuth();
+  const id = Number(formData.get("stockId"));
+  const cls = String(formData.get("assetClass")) as AssetClass;
+  if (!Number.isInteger(id) || !["STOCK", "ETF", "CRYPTO"].includes(cls)) return;
+  await db.stock.update({ where: { id }, data: { assetClass: cls } });
+  // Ampel und Kennzahlen passend zur neuen Klasse neu berechnen
+  await refreshStock(id, (await getFxRates())?.rates, { outlook: false }).catch(() => undefined);
+  revalidatePath("/", "layout");
+}
+
+export async function savePortfolioRules(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAuth();
+  const pct = (k: string) => {
+    const s = parseNum(formData.get(k));
+    return s === "" ? undefined : Number(s) / 100;
+  };
+  const targets = Object.fromEntries(BUCKETS.map((b) => [b, pct(`target.${b}`)]).filter(([, v]) => v !== undefined));
+  const values = Object.values(targets) as number[];
+  if (values.some((v) => !Number.isFinite(v) || v < 0 || v > 1)) return { error: "Zielwerte bitte als Prozent zwischen 0 und 100 eingeben." };
+  const sum = values.reduce((a, v) => a + v, 0);
+  if (values.length && Math.abs(sum - 1) > 0.001) return { error: `Die Zielwerte ergeben zusammen ${Math.round(sum * 1000) / 10} %, nicht 100 %.` };
+  const maxPositionShare = pct("maxPositionShare");
+  if (maxPositionShare !== undefined && (!Number.isFinite(maxPositionShare) || maxPositionShare <= 0 || maxPositionShare > 1))
+    return { error: "Die Klumpen-Grenze bitte als Prozent zwischen 0 und 100 eingeben." };
+  await savePortfolioSettings({ targets, maxPositionShare });
+  revalidatePath("/", "layout");
+  return { ok: "Gespeichert." };
 }

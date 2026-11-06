@@ -16,12 +16,28 @@ model Stock {
   currency  String     @db.VarChar(8)
   sector    String?    @db.VarChar(128)
   cik       String?    @db.VarChar(10) // SEC-Kennung, nur US-Werte
+  assetClass AssetClass @default(STOCK) // Aktie, ETF oder Krypto; bestimmt Ampel und Gruppierung
   createdAt DateTime   @default(now())
   purchases Purchase[]
   snapshots Snapshot[]
   outlooks  Outlook[]
   ratings   Rating[]
   dividends Dividend[]
+}
+
+enum AssetClass {
+  STOCK
+  ETF
+  CRYPTO
+}
+
+// Barbestand als eingetragener Kontostand; frühere Stände bleiben für den Vermögensverlauf erhalten
+model CashBalance {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique @db.Date
+  amount    Decimal  @db.Decimal(18, 2) // EUR
+  note      String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
 }
 
 enum TxType {
@@ -37,7 +53,7 @@ model Purchase {
   stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
   date      DateTime @db.Date
   price     Decimal  @db.Decimal(18, 6) // in Handelswährung der Aktie
-  quantity  Decimal  @db.Decimal(18, 6)
+  quantity  Decimal  @db.Decimal(24, 10) // Krypto braucht 8 Nachkommastellen (Satoshi)
   fees      Decimal  @default(0) @db.Decimal(18, 6) // in EUR
   note      String?  @db.VarChar(255)
   createdAt DateTime @default(now())

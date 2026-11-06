@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { fmtDate, fmtMoney, fmtNum } from "@/lib/format";
+import { fmtDate, fmtMoney } from "@/lib/format";
 import { computePosition } from "@/lib/position";
 import { toTx } from "@/lib/portfolio";
 import { PurchaseForm, type Holding } from "@/components/purchase-form";
@@ -57,7 +57,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="px-4 py-2 font-medium">Datum</th>
                   <th className="px-4 py-2 font-medium">Art</th>
-                  <th className="px-4 py-2 font-medium">Aktie</th>
+                  <th className="px-4 py-2 font-medium">Titel</th>
                   <th className="px-4 py-2 text-right font-medium">Stück</th>
                   <th className="px-4 py-2 text-right font-medium">Kurs</th>
                   <th className="px-4 py-2 text-right font-medium">Gebühren</th>
@@ -74,7 +74,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                     <td className="px-4 py-2">
                       {p.stock.name} <span className="text-xs text-muted">{p.stock.symbol}</span>
                     </td>
-                    <td className="tabular px-4 py-2 text-right">{fmtNum(Number(p.quantity), Number(p.quantity) % 1 ? 3 : 0)}</td>
+                    <td className="tabular px-4 py-2 text-right">{Number(p.quantity).toLocaleString("de-DE", { maximumFractionDigits: 8 })}</td>
                     <td className="tabular whitespace-nowrap px-4 py-2 text-right">{fmtMoney(Number(p.price))}</td>
                     <td className="tabular whitespace-nowrap px-4 py-2 text-right">{fmtMoney(Number(p.fees))}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">

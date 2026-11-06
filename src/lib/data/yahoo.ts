@@ -28,14 +28,35 @@ function toRows(rows: Record<string, unknown>[]): StatementRow[] {
 
 export type SearchHit = { symbol: string; name: string; exchange?: string; type?: string };
 
-export async function searchStocks(query: string): Promise<SearchHit[]> {
-  const res = await yf.search(query, { quotesCount: 10, newsCount: 0 });
-  return res.quotes
-    .filter((q) => "symbol" in q && (q.quoteType === "EQUITY" || q.quoteType === "ETF"))
-    .map((q) => {
-      const r = q as { symbol: string; longname?: string; shortname?: string; exchDisp?: string; quoteType?: string };
-      return { symbol: r.symbol, name: r.longname ?? r.shortname ?? r.symbol, exchange: r.exchDisp, type: r.quoteType };
-    });
+/** Aktien und ETFs; mit crypto auch Kryptowährungen (Euro-Paare wie BTC-EUR zuerst). */
+export async function searchStocks(query: string, opts: { crypto?: boolean } = {}): Promise<SearchHit[]> {
+  const types = opts.crypto ? ["EQUITY", "ETF", "CRYPTOCURRENCY"] : ["EQUITY", "ETF"];
+  const res = await yf.search(query, { quotesCount: opts.crypto ? 15 : 10, newsCount: 0 });
+  const toHits = (quotes: typeof res.quotes) =>
+    quotes
+      .filter((q) => "symbol" in q && types.includes(String(q.quoteType)))
+      .map((q) => {
+        const r = q as { symbol: string; longname?: string; shortname?: string; exchDisp?: string; quoteType?: string };
+        return { symbol: r.symbol, name: r.longname ?? r.shortname ?? r.symbol, exchange: r.exchDisp, type: r.quoteType };
+      });
+  const hits = toHits(res.quotes);
+  if (opts.crypto) {
+    // Die Namenssuche liefert meist nur Dollar-Paare (BTC-USD); das Euro-Paar findet Yahoo nur über sein Kürzel
+    const bases = [...new Set(hits.filter((h) => h.type === "CRYPTOCURRENCY").map((h) => h.symbol.split("-")[0]))]
+      .filter((b) => !hits.some((h) => h.symbol === `${b}-EUR`))
+      .slice(0, 3);
+    const extra = await Promise.all(
+      bases.map((b) =>
+        yf
+          .search(`${b}-EUR`, { quotesCount: 3, newsCount: 0 })
+          .then((r) => toHits(r.quotes).filter((h) => h.symbol === `${b}-EUR`))
+          .catch(() => []),
+      ),
+    );
+    hits.push(...extra.flat());
+  }
+  const rank = (h: SearchHit) => (h.type !== "CRYPTOCURRENCY" ? 0 : h.symbol.endsWith("-EUR") ? 0 : 1);
+  return hits.map((h, i) => ({ h, i })).sort((a, b) => rank(a.h) - rank(b.h) || a.i - b.i).map((x) => x.h);
 }
 
 export async function fetchMarketData(symbol: string): Promise<MarketData> {
@@ -64,6 +85,7 @@ export async function fetchMarketData(symbol: string): Promise<MarketData> {
     symbol,
     name: quote.longName ?? quote.shortName ?? symbol,
     currency: quote.currency ?? "USD",
+    quoteType: quote.quoteType ?? undefined,
     financialCurrency: summary?.financialData?.financialCurrency ?? undefined,
     exchange: quote.fullExchangeName ?? quote.exchange,
     sector: summary?.assetProfile?.sector ?? undefined,

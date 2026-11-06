@@ -13,6 +13,11 @@
   --grey: #9aa1ad;
   --ema-long: #7c4dcc;
   --ema-short: #0891b2;
+  /* Anlageklassen: bewusst keine Ampelfarben */
+  --cls-stock: #1f5fbf;
+  --cls-etf: #0f8a8a;
+  --cls-crypto: #7c4dcc;
+  --cls-cash: #8a919c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,6 +34,10 @@
     --grey: #6b7280;
     --ema-long: #b48cff;
     --ema-short: #22d3ee;
+    --cls-stock: #6ea2ff;
+    --cls-etf: #2cc5c5;
+    --cls-crypto: #b48cff;
+    --cls-cash: #7d8592;
   }
 }
 

@@ -44,8 +44,10 @@ export async function refreshStock(stockId: number, rates: Record<string, number
   const stock = await db.stock.findUniqueOrThrow({ where: { id: stockId }, include: { purchases: true } });
   const market = await fetchMarketData(stock.symbol);
 
+  // Ampel, SEC-Zahlen und KI-Ausblick gibt es nur für Aktien; ETF und Krypto brauchen nur Kurs und Ausschüttungen
+  const isStock = stock.assetClass === "STOCK";
   let cik = stock.cik ?? undefined;
-  if (!stock.symbol.includes(".") && market.currency === "USD") {
+  if (isStock && !stock.symbol.includes(".") && market.currency === "USD") {
     cik ??= await lookupCik(stock.symbol).catch(() => undefined);
     if (cik) market.quarterly = mergeRows(market.quarterly, await fetchSecQuarterly(cik).catch(() => []));
   }
@@ -72,7 +74,7 @@ export async function refreshStock(stockId: number, rates: Record<string, number
   });
 
   // KI-Ausblick nur einmal je neuer Berichtsperiode (und nur für Berichte der letzten ~7 Monate)
-  if (opts.outlook && metrics.latestPeriod && Date.now() - Date.parse(metrics.latestPeriod) < 210 * 86_400_000) {
+  if (isStock && opts.outlook && metrics.latestPeriod && Date.now() - Date.parse(metrics.latestPeriod) < 210 * 86_400_000) {
     const exists = await db.outlook.findUnique({ where: { stockId_period: { stockId, period: metrics.latestPeriod } } });
     if (!exists) {
       // Ein Fehler der KI (z. B. ungültiger Schlüssel) darf die Kennzahlen und die Ampel nicht blockieren
@@ -89,7 +91,9 @@ export async function refreshStock(stockId: number, rates: Record<string, number
   }
 
   const outlook = await db.outlook.findFirst({ where: { stockId }, orderBy: { period: "desc" } });
-  const { light, reasons } = rate(metrics, market.sector ?? stock.sector ?? undefined, outlook ?? undefined, await getThresholds());
+  const { light, reasons } = isStock
+    ? rate(metrics, market.sector ?? stock.sector ?? undefined, outlook ?? undefined, await getThresholds())
+    : { light: "GREY" as const, reasons: [] };
   await db.rating.upsert({
     where: { stockId_date: { stockId, date } },
     create: { stockId, date, light, reasons },

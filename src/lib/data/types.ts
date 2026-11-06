@@ -28,6 +28,7 @@ export type MarketData = {
   symbol: string;
   name: string;
   currency: string; // Handelswährung (kann "GBp" sein)
+  quoteType?: string; // Yahoo-Typ: EQUITY, ETF, CRYPTOCURRENCY …
   financialCurrency?: string; // Berichtswährung der Bilanz
   exchange?: string;
   sector?: string;

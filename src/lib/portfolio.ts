@@ -6,6 +6,7 @@ import type { LightColor, Reason } from "./rating";
 import { getFxRates } from "./settings";
 import { toEur } from "./data/fx";
 import { computePosition, type Tx } from "./position";
+import { BUCKETS, holdingPeriod, type AssetClass, type Bucket, type Holding } from "./wealth";
 
 export type Position = {
   stockId: number;
@@ -13,6 +14,9 @@ export type Position = {
   name: string;
   currency: string;
   sector?: string;
+  assetClass: AssetClass;
+  /** Nur Krypto: wie viel länger als ein Jahr gehalten ist (FIFO) */
+  holding?: Holding;
   quantity: number;
   avgCost: number; // EUR (Kaufkurse laut Abrechnung)
   priceEur?: Sourced; // letzter Kurs, zum aktuellen EZB-Kurs in Euro
@@ -52,15 +56,20 @@ export async function loadPortfolio() {
     orderBy: { name: "asc" },
   });
 
+  const today = new Date().toISOString().slice(0, 10);
   const all: Position[] = stocks.map((s) => {
-    const pos = computePosition(s.purchases.map(toTx));
+    const txs = s.purchases.map(toTx);
+    const pos = computePosition(txs);
     const metrics = (s.snapshots[0]?.metrics ?? {}) as Metrics;
     const eur = (v: number | undefined) => (v === undefined || !rates ? undefined : toEur(v, s.currency, rates));
 
     // Käufe und Verkäufe sind in Euro erfasst; nur Kurs und Dividende kommen in Handelswährung und werden umgerechnet
     const costEur = pos.quantity > 0 ? pos.cost + pos.openFeesEur : undefined;
     const valueEur = pos.quantity > 0 && metrics.price ? eur(metrics.price.value * pos.quantity) : undefined;
-    const annualDividendEur = pos.quantity > 0 && metrics.dividendTTM ? eur(metrics.dividendTTM.value * pos.quantity) : undefined;
+    // Krypto schüttet nie aus, thesaurierende ETFs auch nicht: dort zählt „keine Ausschüttung“ als 0 statt als fehlender Wert
+    const noPayout = s.assetClass === "CRYPTO" || (s.assetClass === "ETF" && metrics.price !== undefined);
+    const annualDividendEur =
+      pos.quantity > 0 && metrics.dividendTTM ? eur(metrics.dividendTTM.value * pos.quantity) : pos.quantity > 0 && noPayout ? 0 : undefined;
     const priceEur = metrics.price && eur(metrics.price.value);
     const fcfCur = metrics.financialCurrency ?? s.currency;
     const fcfEur = metrics.fcfTTM && rates ? toEur(metrics.fcfTTM.value, fcfCur, rates) : undefined;
@@ -71,6 +80,8 @@ export async function loadPortfolio() {
       name: s.name,
       currency: s.currency,
       sector: s.sector ?? undefined,
+      assetClass: s.assetClass,
+      holding: s.assetClass === "CRYPTO" && pos.quantity > 0 ? holdingPeriod(txs, today) : undefined,
       quantity: pos.quantity,
       avgCost: pos.avgCost,
       priceEur: metrics.price && priceEur !== undefined ? { ...metrics.price, value: priceEur, note: `aus ${s.currency} zum EZB-Kurs umgerechnet` } : undefined,
@@ -101,12 +112,29 @@ export async function loadPortfolio() {
   const withSales = all.filter((p) => p.realizedEur !== undefined || p.quantity === 0);
   const realized = withSales.length && withSales.every((p) => p.realizedEur !== undefined) ? withSales.reduce((a, p) => a + p.realizedEur!, 0) : undefined;
 
+  // Barbestand: zuletzt eingetragener Kontostand
+  const cashRow = await db.cashBalance.findFirst({ orderBy: { date: "desc" } });
+  const cash = cashRow ? { amount: Number(cashRow.amount), date: cashRow.date.toISOString().slice(0, 10) } : undefined;
+  const cashEur = cash?.amount ?? 0;
+  // Ohne Wertpapiere zählt nur der Barbestand; fehlt bei einer Position der Kurs, bleibt die Summe offen
+  const securities = positions.length ? totalValue : 0;
+  const total = securities !== undefined ? securities + cashEur : undefined;
+  const byClass = Object.fromEntries(BUCKETS.map((b) => [b, 0])) as Record<Bucket, number>;
+  for (const p of positions) byClass[p.assetClass] += p.valueEur ?? 0;
+  byClass.CASH = cashEur;
+
   return {
     positions,
     closed,
     fxAsOf: fx?.asOf,
+    cash,
+    byClass,
     totals: {
-      value: totalValue,
+      total,
+      cash: cashEur,
+      cashShare: total ? cashEur / total : undefined,
+      yieldTotal: totalDividend !== undefined && total ? totalDividend / total : undefined,
+      value: securities,
       cost: totalCost,
       gain: totalValue !== undefined && totalCost !== undefined ? totalValue - totalCost : undefined,
       realized,

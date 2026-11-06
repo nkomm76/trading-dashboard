@@ -8,9 +8,9 @@ const ISIN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 export type ListingSearch = { hits: SearchHit[]; note?: string };
 
 /** Yahoo-Suche; kennt Yahoo eine ISIN nicht, über Eulerpool Name und Kürzel holen und damit erneut bei Yahoo suchen. */
-export async function findListings(query: string): Promise<ListingSearch> {
+export async function findListings(query: string, opts: { crypto?: boolean } = {}): Promise<ListingSearch> {
   const q = query.trim();
-  const hits = await searchStocks(q).catch(() => []);
+  const hits = await searchStocks(q, opts).catch(() => []);
   const isin = q.toUpperCase();
   if (hits.length || !ISIN.test(isin) || !eulerpoolEnabled()) return { hits };
 
