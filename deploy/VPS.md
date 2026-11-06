@@ -1,9 +1,16 @@
 # Betrieb auf dem VPS mit Docker
 
 Ziel: Die App läuft auf dem VPS in Docker. Die Datenbank ist nur im internen
-Docker-Netz erreichbar, die App nur auf `127.0.0.1:3000`. Aus dem Internet ist
-zunächst nur SSH offen. Den öffentlichen Zugang richtet später ein Cloudflare
-Tunnel mit Cloudflare Access ein.
+Docker-Netz erreichbar. Öffentlich erreichbar ist die App nur über Traefik
+(HTTPS mit Let's-Encrypt-Zertifikat) unter der Adresse in `APP_DOMAIN`,
+zusätzlich für Tests über einen SSH-Tunnel auf `127.0.0.1:3000`.
+
+Auf dem Hostinger-VPS mit Docker-Vorlage laufen Docker und Traefik bereits
+(über den Docker Manager eingerichtet, Traefik im Host-Netzwerk). Die App
+wird trotzdem nicht über den Docker Manager gestartet, sondern mit
+`docker compose` und dem Timer aus Abschnitt 8. Im Docker Manager kannst du
+Status und Protokolle ansehen, aber das Projekt dort nicht neu deployen, sonst
+steuern zwei Systeme dieselben Container.
 
 Geht von Ubuntu 24.04 aus (Vorlage im Hostinger-hPanel). 2 GB RAM reichen für
 den Betrieb, für den Build sind 4 GB angenehmer (z. B. KVM 1 oder größer).
@@ -43,22 +50,30 @@ EOF
 sudo systemctl restart ssh
 ```
 
-Firewall: nur SSH offen.
+Firewall: SSH sowie HTTP und HTTPS für Traefik. Traefik läuft im
+Host-Netzwerk, ufw gilt für ihn also. Ohne die zweite Regel wären auch andere
+Seiten auf dem VPS (z. B. Umami) nicht mehr erreichbar.
 
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow OpenSSH
+sudo ufw allow 80,443/tcp
 sudo ufw enable
 ```
 
-Hinweis: Docker umgeht ufw bei veröffentlichten Ports. Deshalb bindet
-`docker-compose.yml` die App ausdrücklich an `127.0.0.1`. Ports dort nie auf
-`0.0.0.0` ändern.
+Hinweis: Docker umgeht ufw bei veröffentlichten Ports (`ports:` mit
+`0.0.0.0`). Deshalb bindet `docker-compose.yml` die App ausdrücklich an
+`127.0.0.1`. Ports dort nie auf `0.0.0.0` ändern. Andere Container, die
+Ports auf `0.0.0.0` veröffentlichen (z. B. Umami auf 32768), sperrst du in der
+**Hostinger-Firewall** im hPanel (*VPS → Sicherheit → Firewall*): nur 22, 80
+und 443 erlauben. Sie filtert, bevor der Verkehr den VPS erreicht.
 
 ## 2. Docker installieren
 
-Nach der offiziellen Anleitung (apt-Paketquelle von Docker, nicht das
+Entfällt auf einem VPS mit Hostinger-Docker-Vorlage (Docker läuft bereits).
+Dann nur den Benutzer zur Gruppe `docker` hinzufügen (unten). Sonst nach der
+offiziellen Anleitung (apt-Paketquelle von Docker, nicht das
 Komfort-Skript): https://docs.docker.com/engine/install/ubuntu/
 
 Danach den Benutzer zur Gruppe `docker` hinzufügen und neu anmelden:
@@ -113,6 +128,8 @@ nano .env
 
 In `.env` eintragen: `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `SESSION_PASSWORD`,
 `CRON_SECRET`, optional `ANTHROPIC_API_KEY` und `EULERPOOL_API_KEY`.
+`APP_DOMAIN` beim ersten Start noch **leer lassen**: Dann veröffentlicht
+Traefik die App noch nicht (Abschnitt 7).
 `DATABASE_URL`, `SHADOW_DATABASE_URL` und `COOKIE_SECURE` weglassen bzw. leer
 lassen.
 
@@ -175,7 +192,32 @@ danach unter *Einstellungen → Anmeldung* den zweiten Faktor einrichten.
 
 Bleibt die Anmeldung über `http://localhost` nicht bestehen, vorübergehend
 `COOKIE_SECURE="false"` in die `.env` schreiben und `docker compose up -d app`
-ausführen. Nach dem Einrichten des Cloudflare Tunnels wieder entfernen.
+ausführen. Vor dem nächsten Schritt wieder entfernen.
+
+## 7b. Öffentlich über Traefik
+
+Erst wenn der zweite Faktor aktiv ist:
+
+1. Beim DNS-Anbieter der Domain einen **A-Eintrag** für die gewünschte
+   (Sub-)Domain auf die IP des VPS setzen, z. B. `depot.example.de`.
+2. In der `.env` `APP_DOMAIN="depot.example.de"` eintragen (ohne `https://`),
+   `COOKIE_SECURE` entfernen, falls gesetzt.
+3. Neu starten:
+
+   ```bash
+   docker compose up -d
+   ```
+
+Traefik erkennt die App an ihren Labels, holt das Zertifikat bei Let's Encrypt
+(das dauert beim ersten Aufruf ein paar Sekunden) und leitet
+`https://depot.example.de` an die App weiter. Prüfen:
+
+```bash
+curl -sI https://depot.example.de/login | head -5
+```
+
+Erwartet: `HTTP/2 200` und Kopfzeilen wie `strict-transport-security`. Die
+Fehlversuch-Sperre liest die Absender-IP aus `x-real-ip`, den Traefik setzt.
 
 ## 8. Automatisch aktualisieren
 
@@ -242,9 +284,9 @@ Lauf um 23 Uhr `crontab -e` öffnen und diese Zeile eintragen:
 Mit `ANTHROPIC_API_KEY` erzeugt dieser Lauf auch den KI-Ausblick. Das kostet
 etwas.
 
-## Nächster Schritt
+## Optional später: Cloudflare Access davor
 
-Cloudflare Tunnel mit Cloudflare Access. Dafür braucht es eine Domain, deren
-DNS bei Cloudflare liegt. Danach ist die App öffentlich unter einer eigenen
-Adresse erreichbar, aber erst nach der Anmeldung bei Cloudflare Access. Auf
-dem VPS bleiben weiterhin nur SSH offen.
+Für eine zusätzliche Anmeldung, bevor überhaupt jemand die Login-Seite sieht:
+Cloudflare Tunnel mit Cloudflare Access. Dafür muss das DNS der Domain bei
+Cloudflare liegen. In der `.env` dann `CLIENT_IP_HEADER="cf-connecting-ip"`
+setzen, damit die Fehlversuch-Sperre die echte Absender-IP sieht.

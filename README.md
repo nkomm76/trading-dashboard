@@ -36,7 +36,7 @@ Tests: `npm test`
 ## Betrieb auf einem VPS (Docker)
 
 `Dockerfile` und `docker-compose.yml` starten App, MySQL, Migrationen und eine tägliche Sicherung.
-Die Datenbank ist nur intern erreichbar, die App nur auf `127.0.0.1:3000`. Schritt für Schritt: [deploy/VPS.md](deploy/VPS.md).
+Die Datenbank ist nur intern erreichbar; öffentlich liefert Traefik die App per HTTPS unter `APP_DOMAIN` aus, sonst nur `127.0.0.1:3000`. Schritt für Schritt: [deploy/VPS.md](deploy/VPS.md).
 
 ```bash
 docker compose up -d --build

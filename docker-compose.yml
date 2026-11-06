@@ -40,6 +40,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: *db-url
+    # Nur für den SSH-Tunnel; öffentlich erreichbar ist die App über Traefik (HTTPS)
     ports:
       - "127.0.0.1:3000:3000"
     networks: [internal, web]
@@ -47,6 +48,14 @@ services:
       migrate: { condition: service_completed_successfully }
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    # Traefik auf dem VPS (Hostinger-Vorlage, Host-Netzwerk) leitet https://APP_DOMAIN hierher und holt das Zertifikat
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dividenden_web
+      traefik.http.routers.dividenden.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.routers.dividenden.entrypoints: websecure
+      traefik.http.routers.dividenden.tls.certresolver: letsencrypt
+      traefik.http.services.dividenden.loadbalancer.server.port: "3000"
 
   # Tägliche Sicherung nach ./backups (14 Tage)
   backup:
@@ -71,5 +80,6 @@ networks:
   # Ohne Internetzugang: nur App, Migration und Sicherung erreichen die Datenbank
   internal:
     internal: true
-  # Für die App: Daten von Yahoo, SEC, EZB, Eulerpool und Claude
+  # Für die App: Daten von Yahoo, SEC, EZB, Eulerpool und Claude; über dieses Netz erreicht Traefik die App
   web:
+    name: dividenden_web

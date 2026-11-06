@@ -54,14 +54,14 @@ export class LoginGuard {
 }
 
 /**
- * Absender-IP. Hinter Cloudflare zählt cf-connecting-ip, hinter einem eigenen Proxy x-real-ip,
- * sonst der letzte Eintrag in x-forwarded-for (den setzt der nächstgelegene Proxy, nicht der Browser).
+ * Absender-IP aus genau einem Header, den der eigene Proxy setzt und ein Browser nicht vorgeben kann:
+ * hinter Traefik "x-real-ip" (Standard), hinter Cloudflare "cf-connecting-ip" (CLIENT_IP_HEADER).
+ * Andere Header werden ignoriert, sonst könnte ein Angreifer mit erfundenen IPs die Sperre umgehen.
+ * Fehlt der Header, zählt der letzte Eintrag in x-forwarded-for (den setzt der nächstgelegene Proxy).
  */
-export function clientIp(h: Headers): string {
-  const cf = h.get("cf-connecting-ip")?.trim();
-  if (cf) return cf;
-  const real = h.get("x-real-ip")?.trim();
-  if (real) return real;
+export function clientIp(h: Headers, header = process.env.CLIENT_IP_HEADER || "x-real-ip"): string {
+  const trusted = h.get(header)?.trim();
+  if (trusted) return trusted;
   const xff = h.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean);
   return xff?.at(-1) ?? "unbekannt";
 }

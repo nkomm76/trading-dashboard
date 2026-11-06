@@ -30,9 +30,11 @@ describe("LoginGuard", () => {
 });
 
 describe("clientIp", () => {
-  it("nimmt die IP vom nächstgelegenen Proxy", () => {
-    expect(clientIp(new Headers({ "cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "9.9.9.9" }))).toBe("1.2.3.4");
-    expect(clientIp(new Headers({ "x-forwarded-for": "6.6.6.6, 5.5.5.5" }))).toBe("5.5.5.5");
-    expect(clientIp(new Headers())).toBe("unbekannt");
+  it("nimmt die IP nur aus dem Header des eigenen Proxys", () => {
+    // Hinter Traefik: x-real-ip zählt, ein mitgeschickter Cloudflare-Header nicht
+    expect(clientIp(new Headers({ "cf-connecting-ip": "1.2.3.4", "x-real-ip": "7.7.7.7" }), "x-real-ip")).toBe("7.7.7.7");
+    expect(clientIp(new Headers({ "cf-connecting-ip": "1.2.3.4", "x-real-ip": "7.7.7.7" }), "cf-connecting-ip")).toBe("1.2.3.4");
+    expect(clientIp(new Headers({ "x-forwarded-for": "6.6.6.6, 5.5.5.5" }), "x-real-ip")).toBe("5.5.5.5");
+    expect(clientIp(new Headers(), "x-real-ip")).toBe("unbekannt");
   });
 });
