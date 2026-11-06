@@ -77,7 +77,8 @@ cat ~/.ssh/dividenden_deploy.pub
 ```
 
 Den ausgegebenen Schlüssel in GitHub unter *Repository → Settings → Deploy
-keys → Add deploy key* eintragen, ohne Schreibrecht. Dann:
+keys → Add deploy key* im Repository `nkomm76/trading-dashboard` eintragen,
+ohne Schreibrecht. Dann:
 
 ```bash
 cat >> ~/.ssh/config <<'EOF'
@@ -87,7 +88,7 @@ Host github-dividenden
   IdentityFile ~/.ssh/dividenden_deploy
   IdentitiesOnly yes
 EOF
-git clone github-dividenden:nkomm76/dividenden-dashboard.git ~/dividenden-dashboard
+git clone github-dividenden:nkomm76/trading-dashboard.git ~/dividenden-dashboard
 cd ~/dividenden-dashboard
 git checkout production
 ```
