@@ -1,5 +1,6 @@
-# Prüft jeden Push und Pull Request. Ist auf main alles grün, zeigt der Zweig "production" auf diesen Stand;
-# den holt der VPS selbst ab (deploy/auto-deploy.sh). GitHub braucht dafür keinen Zugang zum Server.
+# Prüft jeden Push und Pull Request. Ist auf main alles grün, veröffentlicht GitHub die fertigen Images
+# (ghcr.io/nkomm76/trading-dashboard und -tools) für den Docker Manager und setzt den Zweig "production".
+# GitHub braucht dafür keinen Zugang zum Server.
 name: CI
 
 on:
@@ -38,18 +39,39 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      packages: write
     # Nie zwei Freigaben gleichzeitig; eine neuere ersetzt eine noch wartende ältere
     concurrency:
       group: release
       cancel-in-progress: true
+    env:
+      APP_IMAGE: ghcr.io/nkomm76/trading-dashboard
+      TOOLS_IMAGE: ghcr.io/nkomm76/trading-dashboard-tools
+      SOURCE: https://github.com/nkomm76/trading-dashboard
     steps:
       - uses: actions/checkout@v7
-      - name: production auf diesen Stand setzen (nur wenn er noch der neueste auf main ist)
+      - name: Nur freigeben, wenn dieser Stand noch der neueste auf main ist
+        id: latest
         run: |
           head=$(git ls-remote origin refs/heads/main | cut -f1)
           if [ "$head" != "$GITHUB_SHA" ]; then
             echo "main ist inzwischen weiter ($head), diesen Stand nicht freigeben."
-            exit 0
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
+      # Fertige Images für den Docker Manager von Hostinger (deploy/docker-manager.yml zieht :latest)
+      - name: Images bauen und veröffentlichen
+        if: steps.latest.outputs.ok == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          short=${GITHUB_SHA::7}
+          docker build --target runner --label "org.opencontainers.image.source=$SOURCE" -t "$APP_IMAGE:latest" -t "$APP_IMAGE:$short" .
+          docker build --target tools --label "org.opencontainers.image.source=$SOURCE" -t "$TOOLS_IMAGE:latest" -t "$TOOLS_IMAGE:$short" .
+          docker push --all-tags "$APP_IMAGE"
+          docker push --all-tags "$TOOLS_IMAGE"
+      - name: production auf diesen Stand setzen (für den Betrieb nach deploy/VPS.md)
+        if: steps.latest.outputs.ok == 'true'
+        run: |
           git push --force origin "$GITHUB_SHA:refs/heads/production"
           echo "production → $GITHUB_SHA"

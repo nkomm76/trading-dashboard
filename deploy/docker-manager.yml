@@ -1,0 +1,99 @@
+# Vorlage für den Docker Manager von Hostinger. Nicht von Hand ausfüllen:
+#   npm run docker-paket
+# erzeugt daraus auf dem Mac die fertige Datei mit allen Zugangsdaten (Anleitung: deploy/DOCKER-MANAGER.md).
+#
+# Die App kommt als fertiges Image von GitHub (ghcr.io/nkomm76/trading-dashboard); die Datenbank ist nur intern
+# erreichbar, öffentlich ist nur https://__APP_DOMAIN__ über den Traefik des VPS.
+
+services:
+  db:
+    image: mysql:9.7
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: dividenden
+      MYSQL_USER: dividenden
+      MYSQL_PASSWORD: "__DB_PASSWORD__"
+      MYSQL_ROOT_PASSWORD: "__DB_ROOT_PASSWORD__"
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Läuft bei jedem Start einmal und bringt die Tabellen auf den Stand der App
+  migrate:
+    image: ghcr.io/nkomm76/trading-dashboard-tools:latest
+    pull_policy: always
+    environment:
+      DATABASE_URL: "mysql://dividenden:__DB_PASSWORD__@db:3306/dividenden"
+    networks: [internal]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  app:
+    image: ghcr.io/nkomm76/trading-dashboard:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "mysql://dividenden:__DB_PASSWORD__@db:3306/dividenden"
+      SESSION_PASSWORD: "__SESSION_PASSWORD__"
+      ADMIN_PASSWORD_HASH_B64: "__ADMIN_PASSWORD_HASH_B64__"
+      CRON_SECRET: "__CRON_SECRET__"
+      SEC_USER_AGENT: "__SEC_USER_AGENT__"
+      ANTHROPIC_API_KEY: "__ANTHROPIC_API_KEY__"
+      EULERPOOL_API_KEY: "__EULERPOOL_API_KEY__"
+    networks: [internal, web]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dividenden_web
+      traefik.http.routers.dividenden.rule: Host(`__APP_DOMAIN__`)
+      traefik.http.routers.dividenden.entrypoints: websecure
+      traefik.http.routers.dividenden.tls.certresolver: letsencrypt
+      traefik.http.services.dividenden.loadbalancer.server.port: "3000"
+
+  # Tägliche Sicherung der Datenbank in das Volume "backups", 14 Tage aufbewahrt
+  backup:
+    image: mysql:9.7
+    restart: unless-stopped
+    environment:
+      MYSQL_PWD: "__DB_PASSWORD__"
+    volumes:
+      - backups:/backups
+    networks: [internal]
+    depends_on:
+      db: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/dividenden-$$(date +%F).sql.gz
+          if mysqldump -h db -u dividenden --single-transaction --no-tablespaces dividenden | gzip > "$$f.tmp"; then
+            mv "$$f.tmp" "$$f" && echo "Sicherung geschrieben: $$f"
+          else
+            echo "Sicherung fehlgeschlagen" >&2
+          fi
+          find /backups -name 'dividenden-*.sql.gz' -type f -mtime +14 -delete
+          sleep 86400
+        done
+
+volumes:
+  db-data:
+  backups:
+
+networks:
+  # Ohne Internetzugang: nur App, Migration und Sicherung erreichen die Datenbank
+  internal:
+    name: dividenden_internal
+    internal: true
+  # Für die App: Kursdaten aus dem Internet; über dieses Netz erreicht Traefik die App
+  web:
+    name: dividenden_web
