@@ -3,9 +3,14 @@
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import QRCode from "qrcode";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { createSession, destroySession, requireAuth } from "@/lib/session";
+import { clientIp, LoginGuard } from "@/lib/login-guard";
+import { newSecret, otpauthUri, verifyCode } from "@/lib/totp";
+import { activateTotp, bumpSessionVersion, disableTotp, getPendingTotp, getTotp, markTotpUsed, savePendingTotp } from "@/lib/auth-store";
 import { fetchMarketData } from "@/lib/data/yahoo";
 import { refreshAll, refreshStock } from "@/lib/refresh";
 import { getFxRates, savePortfolioSettings, saveThresholds } from "@/lib/settings";
@@ -19,26 +24,28 @@ import { assetClassFromQuoteType, BUCKETS, type AssetClass } from "@/lib/wealth"
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
-// Einfache Bremse gegen Passwort-Raten (pro Server-Prozess)
-let failedLogins = 0;
-let lockedUntil = 0;
+// Bremse gegen Passwort-Raten: je IP, dazu eine Obergrenze für alle zusammen (pro Server-Prozess)
+const guard = new LoginGuard();
 
 export async function login(_: FormState, formData: FormData): Promise<FormState> {
-  if (Date.now() < lockedUntil) return { error: "Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen." };
+  const ip = clientIp(await headers());
+  const wait = guard.lockedFor(ip);
+  if (wait > 0) return { error: `Zu viele Fehlversuche. Bitte in ${Math.ceil(wait / 60_000)} Minuten erneut versuchen.` };
   const pw = String(formData.get("password") ?? "");
+  const code = String(formData.get("code") ?? "");
   const b64 = process.env.ADMIN_PASSWORD_HASH_B64;
   if (!b64) return { error: "Kein Passwort eingerichtet (ADMIN_PASSWORD_HASH_B64 fehlt)." };
-  const ok = await bcrypt.compare(pw, Buffer.from(b64, "base64").toString("utf8"));
+  const pwOk = await bcrypt.compare(pw, Buffer.from(b64, "base64").toString("utf8"));
+  const totp = await getTotp();
+  // Code immer prüfen, auch bei falschem Passwort: keine Auskunft, welcher Teil falsch war
+  const step = totp ? verifyCode(totp.secret, code, Date.now(), totp.lastStep) : undefined;
+  const ok = pwOk && (!totp || (step !== undefined && (await markTotpUsed(step))));
   if (!ok) {
-    failedLogins++;
-    if (failedLogins >= 5) {
-      lockedUntil = Date.now() + 10 * 60_000;
-      failedLogins = 0;
-    }
+    guard.fail(ip);
     await new Promise((r) => setTimeout(r, 800));
-    return { error: "Passwort falsch." };
+    return { error: totp ? "Passwort oder Code falsch." : "Passwort falsch." };
   }
-  failedLogins = 0;
+  guard.success(ip);
   await createSession();
   redirect("/");
 }
@@ -46,6 +53,50 @@ export async function login(_: FormState, formData: FormData): Promise<FormState
 export async function logout() {
   await destroySession();
   redirect("/login");
+}
+
+/** Meldet alle Geräte ab, auch dieses (z. B. nach Verlust eines Geräts). */
+export async function logoutEverywhere() {
+  await requireAuth();
+  await bumpSessionVersion();
+  await destroySession();
+  redirect("/login");
+}
+
+export type TotpSetupState = { error?: string; ok?: string; secret?: string; qr?: string } | undefined;
+
+/** Schritt 1: neuen Schlüssel erzeugen und als QR-Code zeigen. Aktiv wird er erst mit dem ersten richtigen Code. */
+export async function startTotpSetup(): Promise<TotpSetupState> {
+  await requireAuth();
+  if (await getTotp()) return { error: "Der zweite Faktor ist schon eingerichtet." };
+  const secret = newSecret();
+  await savePendingTotp(secret);
+  const qr = await QRCode.toDataURL(otpauthUri(secret), { margin: 1, width: 220 });
+  return { secret, qr };
+}
+
+/** Schritt 2: Code aus der App bestätigen und den zweiten Faktor einschalten. */
+export async function confirmTotpSetup(prev: TotpSetupState, formData: FormData): Promise<TotpSetupState> {
+  await requireAuth();
+  const pending = await getPendingTotp();
+  if (!pending || Date.now() - pending.createdAt > 15 * 60_000) return { error: "Einrichtung abgelaufen. Bitte neu starten." };
+  const step = verifyCode(pending.secret, String(formData.get("code") ?? ""));
+  if (step === undefined) return { ...prev, error: "Code stimmt nicht. Uhrzeit des Handys prüfen und den aktuellen Code eingeben." };
+  await activateTotp(pending.secret, step);
+  revalidatePath("/einstellungen");
+  return { ok: "Zweiter Faktor ist aktiv. Ab jetzt braucht die Anmeldung Passwort und Code." };
+}
+
+/** Ausschalten nur mit gültigem aktuellem Code. */
+export async function disableTotpAction(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAuth();
+  const totp = await getTotp();
+  if (!totp) return { error: "Der zweite Faktor ist nicht eingerichtet." };
+  const step = verifyCode(totp.secret, String(formData.get("code") ?? ""), Date.now(), totp.lastStep);
+  if (step === undefined) return { error: "Code stimmt nicht." };
+  await disableTotp();
+  revalidatePath("/einstellungen");
+  return { ok: "Zweiter Faktor ist ausgeschaltet." };
 }
 
 const PurchaseSchema = z.object({

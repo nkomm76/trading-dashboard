@@ -4,10 +4,13 @@ import { PortfolioRulesForm } from "@/components/portfolio-rules-form";
 import { SettingsForm } from "@/components/settings-form";
 import { RefreshButton } from "@/components/refresh-button";
 import { eulerpoolEnabled } from "@/lib/data/eulerpool";
+import { getTotp } from "@/lib/auth-store";
+import { SecuritySettings } from "@/components/security-settings";
 
 export default async function SettingsPage() {
   const t = await getThresholds();
   const rules = await getPortfolioSettings();
+  const totpActive = Boolean(await getTotp());
   const logs = await db.refreshLog.findMany({ orderBy: { startedAt: "desc" }, take: 10 });
   const kiActive = Boolean(process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-"));
 
@@ -24,6 +27,11 @@ export default async function SettingsPage() {
           <h2 className="mb-1 font-semibold">Depot-Regeln</h2>
           <p className="mb-4 text-sm text-muted">Eigene Ziele für die Übersicht. Die Übersicht zeigt nur die Abweichung, sie empfiehlt nichts.</p>
           <PortfolioRulesForm s={rules} defaultMax={0.1} />
+        </div>
+        <div id="sicherheit" className="card scroll-mt-4 p-5">
+          <h2 className="mb-1 font-semibold">Anmeldung</h2>
+          <p className="mb-4 text-sm text-muted">Mit zweitem Faktor reicht ein erratenes oder abgefangenes Passwort nicht mehr. Wer das Handy verliert, schaltet den Faktor auf dem Server mit „npm run reset-2fa“ ab.</p>
+          <SecuritySettings totpActive={totpActive} />
         </div>
         <div className="card p-5">
           <h2 className="mb-1 font-semibold">Daten aktualisieren</h2>

@@ -2,11 +2,13 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sealData, unsealData } from "iron-session";
+import { getSessionVersion } from "./auth-store";
 
 export const SESSION_COOKIE = "divdash_session";
 const MAX_AGE = 60 * 60 * 24 * 14; // 14 Tage
 
-type Session = { loggedIn: true; exp: number };
+// v: Session-Version zum Zeitpunkt der Anmeldung; „Überall abmelden“ erhöht sie in der Datenbank
+type Session = { loggedIn: true; exp: number; v: number };
 
 function password() {
   const p = process.env.SESSION_PASSWORD;
@@ -16,7 +18,7 @@ function password() {
 
 export async function createSession() {
   const exp = Date.now() + MAX_AGE * 1000;
-  const sealed = await sealData({ loggedIn: true, exp } satisfies Session, { password: password(), ttl: MAX_AGE });
+  const sealed = await sealData({ loggedIn: true, exp, v: await getSessionVersion() } satisfies Session, { password: password(), ttl: MAX_AGE });
   (await cookies()).set(SESSION_COOKIE, sealed, {
     httpOnly: true,
     // Lokal über http://localhost: COOKIE_SECURE=false setzen
@@ -36,7 +38,8 @@ export async function isLoggedIn(): Promise<boolean> {
   if (!raw) return false;
   try {
     const s = await unsealData<Partial<Session>>(raw, { password: password(), ttl: MAX_AGE });
-    return s.loggedIn === true && typeof s.exp === "number" && s.exp > Date.now();
+    if (s.loggedIn !== true || typeof s.exp !== "number" || s.exp <= Date.now()) return false;
+    return (s.v ?? 0) === (await getSessionVersion());
   } catch {
     return false;
   }
