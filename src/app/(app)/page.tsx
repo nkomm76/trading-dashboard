@@ -31,7 +31,11 @@ export default async function DashboardPage() {
     <section className="card p-4">
       <h2 className="mb-1 font-semibold">Barbestand</h2>
       <p className="mb-3 text-xs text-muted">
-        {cash ? `Zuletzt ${fmtMoney(cash.amount)} am ${fmtDate(cash.date)}. ` : ""}Trage den aktuellen Kontostand ein; frühere Stände bleiben für den Verlauf erhalten. Ohne Verzinsung.
+        {cash ? `Zuletzt eingetragen ${fmtMoney(cash.amount)} am ${fmtDate(cash.date)}. ` : ""}
+        {cash && Math.abs(cash.change) >= 0.005
+          ? `Seitdem gebuchte Käufe und Verkäufe: ${cash.change > 0 ? "+" : ""}${fmtMoney(cash.change)}, also jetzt ${fmtMoney(totals.cash)}. `
+          : ""}
+        Käufe und Verkäufe nach dem letzten Eintrag rechnet das Dashboard selbst ein; Dividenden, Zinsen und Überweisungen nicht. Trage den Kontostand ab und zu laut Depot ein, frühere Stände bleiben für den Verlauf erhalten.
       </p>
       <CashForm current={cash} />
       {cashHistory.length > 0 && (

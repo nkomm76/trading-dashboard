@@ -18,7 +18,7 @@ export async function GET() {
     db.cashBalance.findMany({ orderBy: { date: "asc" } }),
   ]);
   const inputs = stocks.map((s) => ({ symbol: s.symbol, assetClass: s.assetClass, txs: s.purchases.map(toTx) }));
-  const cashRows = cash.map((c) => ({ date: c.date.toISOString().slice(0, 10), amount: Number(c.amount) }));
+  const cashRows = cash.map((c) => ({ date: c.date.toISOString().slice(0, 10), amount: Number(c.amount), createdAt: c.createdAt.toISOString() }));
   const key = JSON.stringify([inputs, cashRows]);
   const hit = cache.get(key);
   // Nie im Browser zwischenspeichern: die Antwort ändert sich mit jeder Buchung und jedem Kontostand

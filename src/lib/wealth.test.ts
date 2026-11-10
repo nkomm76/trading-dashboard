@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetClassFromQuoteType, concentrations, groupSlices, holdingPeriod, oneYearAfter, openLotsFifo, targetDeviation, wealthHistory } from "./wealth";
+import { assetClassFromQuoteType, concentrations, groupSlices, holdingPeriod, oneYearAfter, openLotsFifo, targetDeviation, wealthHistory, cashOn, txCashFlow } from "./wealth";
 import type { Tx } from "./position";
 
 const buy = (date: string, quantity: number, price = 100): Tx => ({ type: "BUY", date, quantity, price, fees: 0 });
@@ -67,8 +67,9 @@ describe("wealthHistory", () => {
     expect(h.map((p) => p.date)).toEqual(["2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"]);
     expect(h[0]).toEqual({ date: "2026-01-02", securities: 1000, byClass: { STOCK: 1000, ETF: 0, CRYPTO: 0 }, cost: 1000, cash: undefined, total: 1000 });
     expect(h[1]).toMatchObject({ securities: 1100, cash: 1000, total: 2100 });
-    expect(h[2]).toMatchObject({ securities: 660, cost: 600 }); // 6 Stück zum Kurs vom 05.01.
-    expect(h[4]).toMatchObject({ securities: 720, total: 1720 });
+    // 6 Stück zum Kurs vom 05.01.; der Verkauf (4 × 120) kommt zum Kontostand vom 05.01. dazu
+    expect(h[2]).toMatchObject({ securities: 660, cost: 600, cash: 1480 });
+    expect(h[4]).toMatchObject({ securities: 720, cash: 1480, total: 2200 });
   });
 
   it("teilt den Wert nach Anlageklassen auf", () => {
@@ -87,5 +88,38 @@ describe("wealthHistory", () => {
 
   it("liefert nichts ohne Buchungen und Kontostände", () => {
     expect(wealthHistory([], [], "2026-01-01")).toEqual([]);
+  });
+});
+
+describe("cashOn", () => {
+  const entry = { date: "2026-03-01", amount: 1000, createdAt: "2026-03-01T18:00:00.000Z" };
+
+  it("rechnet Verkäufe nach dem Kontostand ein (Erlös abzüglich Gebühren) und Käufe heraus (Betrag plus Gebühren)", () => {
+    const txs: Tx[] = [
+      { type: "SELL", date: "2026-03-05", quantity: 2, price: 150, fees: 5.9 },
+      { type: "BUY", date: "2026-03-10", quantity: 1, price: 200, fees: 3.9 },
+    ];
+    expect(txCashFlow(txs[0])).toBeCloseTo(294.1);
+    expect(txCashFlow(txs[1])).toBeCloseTo(-203.9);
+    expect(cashOn([entry], txs, "2026-03-07")).toBeCloseTo(1294.1);
+    expect(cashOn([entry], txs, "2026-03-31")).toBeCloseTo(1090.2);
+  });
+
+  it("lässt Buchungen vor dem Kontostand weg; am selben Tag zählt nur, was danach eingetragen wurde", () => {
+    const txs: Tx[] = [
+      { type: "SELL", date: "2026-02-20", quantity: 1, price: 100, fees: 0 },
+      { type: "SELL", date: "2026-03-01", quantity: 1, price: 50, fees: 0, createdAt: "2026-03-01T09:00:00.000Z" },
+      { type: "SELL", date: "2026-03-01", quantity: 1, price: 30, fees: 0, createdAt: "2026-03-01T20:00:00.000Z" },
+      { type: "SELL", date: "2026-03-01", quantity: 1, price: 7, fees: 0 },
+    ];
+    expect(cashOn([entry], txs, "2026-03-01")).toBe(1030);
+  });
+
+  it("nimmt den letzten Kontostand bis zum Tag und ist davor unbekannt", () => {
+    const later = { date: "2026-04-01", amount: 500 };
+    const txs: Tx[] = [{ type: "SELL", date: "2026-03-15", quantity: 1, price: 100, fees: 0 }];
+    expect(cashOn([later, entry], txs, "2026-02-01")).toBeUndefined();
+    expect(cashOn([later, entry], txs, "2026-03-20")).toBe(1100);
+    expect(cashOn([later, entry], txs, "2026-04-02")).toBe(500);
   });
 });

@@ -7,7 +7,7 @@ import { getFxRates } from "./settings";
 import { localToday } from "./format";
 import { toEur } from "./data/fx";
 import { computePosition, type Tx } from "./position";
-import { BUCKETS, holdingPeriod, type AssetClass, type Bucket, type Holding } from "./wealth";
+import { BUCKETS, cashOn, holdingPeriod, type AssetClass, type Bucket, type Holding } from "./wealth";
 
 export type Position = {
   stockId: number;
@@ -34,8 +34,9 @@ export type Position = {
   outlookStatus?: string;
 };
 
-export const toTx = (p: { id: number; type: "BUY" | "SELL"; date: Date; price: unknown; quantity: unknown; fees: unknown }): Tx => ({
+export const toTx = (p: { id: number; type: "BUY" | "SELL"; date: Date; price: unknown; quantity: unknown; fees: unknown; createdAt?: Date }): Tx => ({
   id: p.id,
+  ...(p.createdAt ? { createdAt: p.createdAt.toISOString() } : {}),
   type: p.type,
   date: p.date.toISOString().slice(0, 10),
   price: Number(p.price),
@@ -118,10 +119,14 @@ export async function loadPortfolio() {
   const withSales = all.filter((p) => p.realizedEur !== undefined || p.quantity === 0);
   const realized = withSales.length && withSales.every((p) => p.realizedEur !== undefined) ? withSales.reduce((a, p) => a + p.realizedEur!, 0) : undefined;
 
-  // Barbestand: zuletzt eingetragener Kontostand
+  // Barbestand: zuletzt eingetragener Kontostand plus die Käufe und Verkäufe, die danach gebucht wurden
   const cashRow = await db.cashBalance.findFirst({ orderBy: { date: "desc" } });
-  const cash = cashRow ? { amount: Number(cashRow.amount), date: cashRow.date.toISOString().slice(0, 10) } : undefined;
-  const cashEur = cash?.amount ?? 0;
+  const cash = cashRow
+    ? { amount: Number(cashRow.amount), date: cashRow.date.toISOString().slice(0, 10), createdAt: cashRow.createdAt.toISOString() }
+    : undefined;
+  const allTxs = stocks.flatMap((s) => s.purchases.map(toTx));
+  const cashEur = (cash && cashOn([cash], allTxs, today)) ?? 0;
+  const cashChange = cash ? cashEur - cash.amount : 0;
   // Ohne Wertpapiere zählt nur der Barbestand; fehlt bei einer Position der Kurs, bleibt die Summe offen
   const securities = positions.length ? totalValue : 0;
   const total = securities !== undefined ? securities + cashEur : undefined;
@@ -133,7 +138,7 @@ export async function loadPortfolio() {
     positions,
     closed,
     fxAsOf: fx?.asOf,
-    cash,
+    cash: cash && { amount: cash.amount, date: cash.date, change: cashChange },
     byClass,
     totals: {
       total,

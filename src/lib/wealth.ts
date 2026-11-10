@@ -128,11 +128,34 @@ export type HistoryPoint = {
 
 const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 
+/** Eingetragener Kontostand; createdAt (ISO) ordnet Buchungen vom selben Tag davor oder danach ein. */
+export type CashEntry = { date: string; amount: number; createdAt?: string };
+
+/** Wirkung einer Buchung aufs Verrechnungskonto: Verkauf bringt den Erlös abzüglich Gebühren, Kauf kostet Betrag plus Gebühren. */
+export const txCashFlow = (t: Tx) => (t.type === "SELL" ? t.price * t.quantity - t.fees : -(t.price * t.quantity + t.fees));
+
+/** Buchung nach dem Kontostand? Am selben Tag entscheidet, was zuerst eingetragen wurde; ohne Zeitangabe gilt sie als enthalten. */
+const bookedAfter = (t: Tx, e: CashEntry) =>
+  t.date > e.date || (t.date === e.date && !!t.createdAt && !!e.createdAt && t.createdAt > e.createdAt);
+
+/**
+ * Barbestand an einem Tag: letzter eingetragener Kontostand bis dahin plus alle Käufe und Verkäufe, die danach gebucht wurden.
+ * Undefined, solange noch kein Kontostand eingetragen ist.
+ */
+export function cashOn(entries: CashEntry[], txs: Tx[], day: string): number | undefined {
+  let last: CashEntry | undefined;
+  for (const e of entries) if (e.date <= day && (!last || e.date > last.date)) last = e;
+  if (!last) return undefined;
+  const base = last;
+  return txs.reduce((sum, t) => (t.date <= day && bookedAfter(t, base) ? sum + txCashFlow(t) : sum), base.amount);
+}
+
 /**
  * Vermögensverlauf: Bestand je Tag aus den Buchungen, bewertet mit dem letzten bekannten Schlusskurs.
- * Barbestand = zuletzt eingetragener Kontostand bis zu diesem Tag (davor unbekannt und nicht mitgezählt).
+ * Barbestand = zuletzt eingetragener Kontostand bis zu diesem Tag plus die Käufe und Verkäufe danach (vor dem ersten Eintrag
+ * unbekannt und nicht mitgezählt).
  */
-export function wealthHistory(holdings: HistoryInput[], cash: { date: string; amount: number }[], today: string): HistoryPoint[] {
+export function wealthHistory(holdings: HistoryInput[], cash: CashEntry[], today: string): HistoryPoint[] {
   const firstTx = holdings.flatMap((h) => h.txs.map((t) => t.date)).sort()[0];
   const firstCash = [...cash].sort((a, b) => a.date.localeCompare(b.date))[0]?.date;
   const start = [firstTx, firstCash].filter(Boolean).sort()[0];
@@ -147,7 +170,7 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
   for (const c of cash) days.add(c.date);
   const grid = [...days].filter((d) => d >= start && d <= today).sort();
 
-  const sortedCash = [...cash].sort((a, b) => a.date.localeCompare(b.date));
+  const allTxs = holdings.flatMap((h) => h.txs);
   // Je Reihe ein Zeiger auf Buchungen und Kurse: das Raster läuft aufsteigend, also nur vorwärts gehen (linear statt quadratisch)
   const series = holdings.map((h) => ({
     cls: h.assetClass ?? "STOCK",
@@ -157,8 +180,6 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
     closeIdx: -1,
     pos: undefined as ReturnType<typeof computePosition> | undefined,
   }));
-  let cashIdx = -1;
-
   return grid.map((day) => {
     let securities = 0;
     let cost = 0;
@@ -178,8 +199,7 @@ export function wealthHistory(holdings: HistoryInput[], cash: { date: string; am
       securities += value;
       byClass[s.cls] += value;
     }
-    while (cashIdx + 1 < sortedCash.length && sortedCash[cashIdx + 1].date <= day) cashIdx++;
-    const cashValue = cashIdx >= 0 ? sortedCash[cashIdx].amount : undefined;
+    const cashValue = cashOn(cash, allTxs, day);
     return { date: day, securities, byClass, cost, cash: cashValue, total: securities + (cashValue ?? 0) };
   });
 }

@@ -1,7 +1,7 @@
 // Bestand aus Käufen und Verkäufen nach der Durchschnittskostenmethode.
 // Kurse und Gebühren in Euro, so wie auf der Abrechnung.
 
-export type Tx = { id?: number; type: "BUY" | "SELL"; date: string; price: number; quantity: number; fees: number };
+export type Tx = { id?: number; type: "BUY" | "SELL"; date: string; price: number; quantity: number; fees: number; createdAt?: string };
 
 export type PositionState = {
   quantity: number;
